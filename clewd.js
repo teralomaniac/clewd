@@ -155,7 +155,7 @@ let uuidOrg, curPrompt = {}, prevPrompt = {}, prevMessages = [], prevImpersonate
         padtxt: 13500,
         xmlPlot: true,
         localtunnel: false,
-        Superfetch: true
+        Superfetch: false
     }
 };
 
