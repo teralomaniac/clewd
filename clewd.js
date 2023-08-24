@@ -79,7 +79,7 @@ const Settings = {
     FullColon: process.env.FullColon || true, //根源性防止HA
     xmlPlot: process.env.xmlPlot || true, //自动xml tags附加，<card>触发
     localtunnel: false,  //创建用于外网访问的隧道URL
-    VPNfree: process.env.VPNfree || false  //使用国内镜像站claudeai.ai，免除代理但速度较慢
+    VPNfree: process.env.VPNfree || true  //使用国内镜像站claudeai.ai，免除代理但速度较慢
 };
 
 /***********************/
