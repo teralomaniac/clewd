@@ -77,7 +77,6 @@ const simpletokenizer = (prompt) => {
         }
     }
     content = content.replace(/(\n\n|^)xmlPlot:\s*/gm, '$1');
-    content = content.replace(/<\!-- Merge.*?Disable -->/gm, '');
 
     //自定义插入
     content = content.replace(/(<\/?)PrevAssistant>/gm, '$1@1>');
@@ -101,6 +100,18 @@ const simpletokenizer = (prompt) => {
         segcontentHuman[seglength - 2] = segcontentHuman.splice(seglength - 1, 1, segcontentHuman[seglength - 2])[0];
     }
     content = segcontentHuman.join('\n\nHuman:');
+
+    //二次role合并
+    if (!content.includes('<\!-- Merge Disable -->')) {
+        if (!content.includes('<\!-- Merge Human Disable -->')) {
+            content = content.replace(/(?:\n\n|^)Human:(.*?(?:\n\nAssistant:|$))/gs, function(match, p1) {return '\n\nHuman:' + p1.replace(/\n\nHuman:\s*/g, '\n\n')});
+            content = content.replace(/^\s*Human:\s*/, '');
+        }
+        if (!content.includes('<\!-- Merge Assistant Disable -->')) {
+            content = content.replace(/\n\nAssistant:(.*?(?:\n\nHuman:|$))/gs, function(match, p1) {return '\n\nAssistant:' + p1.replace(/\n\nAssistant:\s*/g, '\n\n')});
+        }
+    }
+    content = content.replace(/<\!-- Merge.*?Disable -->/gm, '');
 
     //给开头加上</file-attachment-contents>用于截断附加文件标识
     content.includes('<file-attachment-contents>') && (content = '</file-attachment-contents>\n\n' + content);
@@ -174,7 +185,7 @@ let uuidOrg, curPrompt = {}, prevPrompt = {}, prevMessages = [], prevImpersonate
         StripHuman: false,
         PassParams: false,
         ClearFlags: true,
-        PreserveChats: true,
+        PreserveChats: false,
         LogMessages: true,
         FullColon: true,
         padtxt: 15000,
@@ -252,7 +263,7 @@ const updateParams = res => {
         currentIndex = (currentIndex + 1) % Config.CookieArray.length;
         changetime += 1;
     }
-    let percentage = ((changetime + Config.CookieIndex) / totaltime) * 100
+    let percentage = ((changetime + Math.max(Config.CookieIndex - 1, 0)) / totaltime) * 100
     if (Config.Cookiecounter < 0 && percentage > 100) {
         console.log(`\n※※※Cookie cleanup completed※※※\n\n`);
         return process.exit();
@@ -261,6 +272,7 @@ const updateParams = res => {
     if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
         throw Error('Set your cookie inside config.js');
     }
+    !/^sessionKey=/.test(Config.Cookie) && (Config.Cookie += 'sessionKey='); //
     updateCookies(Config.Cookie);
     //console.log(`[2m${Main}[0m\n[33mhttp://${Config.Ip}:${Config.Port}/v1[0m\n\n${Object.keys(Config.Settings).map((setting => UnknownSettings.includes(setting) ? `??? [31m${setting}: ${Config.Settings[setting]}[0m` : `[1m${setting}:[0m ${ChangedSettings.includes(setting) ? '[33m' : '[36m'}${Config.Settings[setting]}[0m`)).sort().join('\n')}\n`);
     //Config.Settings.Superfetch && SuperfetchAvailable(true);
@@ -390,7 +402,16 @@ const updateParams = res => {
         }
     }), conversations = await convRes.json();
     updateParams(convRes);
-    conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
+    //conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
+/************************* */
+    if (conversations.length > 0) {
+        try {
+            await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
+        } catch (err) {
+            console.log(`[33mdeleteChat failed[0m`);
+        }
+    }
+/************************* */
 }, writeSettings = async (config, firstRun = false) => {
     write(ConfigPath, `/*\n* https://rentry.org/teralomaniac_clewd\n* https://github.com/teralomaniac/clewd\n*/\n\n// SET YOUR COOKIE BELOW\n\nmodule.exports = ${JSON.stringify(config, null, 4)}\n\n/*\n BufferSize\n * How many characters will be buffered before the AI types once\n * lower = less chance of \`PreventImperson\` working properly\n\n ---\n\n SystemInterval\n * How many messages until \`SystemExperiments alternates\`\n\n ---\n\n Other settings\n * https://gitgud.io/ahsk/clewd/#defaults\n * and\n * https://gitgud.io/ahsk/clewd/-/blob/master/CHANGELOG.md\n */`.trim().replace(/((?<!\r)\n|\r(?!\n))/g, '\r\n'));
     if (firstRun) {
@@ -719,6 +740,13 @@ const updateParams = res => {
                     }, Logger);
                     titleTimer = setInterval((() => setTitle('recv ' + bytesToSize(clewdStream.size))), 300);
                     Config.Settings.Superfetch ? await Readable.toWeb(fetchAPI.body).pipeThrough(clewdStream).pipeTo(response) : await fetchAPI.body.pipeThrough(clewdStream).pipeTo(response);
+/******************************** */
+                    try {
+                        await deleteChat(Conversation.uuid);
+                    } catch (err) {
+                        console.log(`[33mdeleteChat failed[0m`);
+                    }
+/******************************** */
                 } catch (err) {
                     if ('AbortError' === err.name) {
                         res.end();
@@ -750,12 +778,12 @@ const updateParams = res => {
 /******************************** */
                     clewdStream.empty();
                 }
-                //if (prevImpersonated) {
+/******************************** */
+                /*if (prevImpersonated) {
                     try {
                         await deleteChat(Conversation.uuid);
                     } catch (err) {}
-                //}
-/******************************** */
+                }*/
                 changer && CookieChanger.emit('ChangeCookie');
 /******************************** */
             }));
@@ -773,7 +801,7 @@ const updateParams = res => {
       default:
         req.url !== '/' && (console.log('unknown request: ' + req.url)); //console.log('unknown request: ' + req.url);
         res.json(
-            `${Main}完全开源、免费且禁止商用\n\n使用以上地址+'/v1'作为反代地址\n\nFAQ: https://rentry.org/teralomaniac_clewd`
+            `${Main}\n\n完全开源、免费且禁止商用\n\n使用以上地址+'/v1'作为反代地址\n\nFAQ: https://rentry.org/teralomaniac_clewd`
             /*{
             error: {
                 message: '404 Not Found',
@@ -839,6 +867,7 @@ const updateParams = res => {
     Config.rProxy.endsWith('/') && (Config.rProxy = Config.rProxy.slice(0, -1));
     let uniqueArr = [], seen = new Set();
     for (let Cookie of Config.CookieArray) {
+        !/^sessionKey=/.test(Cookie) && (Cookie += 'sessionKey=');
         if (!seen.has(Cookie)) {
             uniqueArr.push(Cookie);
             seen.add(Cookie);
