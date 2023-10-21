@@ -162,6 +162,7 @@ let uuidOrg, curPrompt = {}, prevPrompt = {}, prevMessages = [], prevImpersonate
     CookieArray: [],
     Cookiecounter: 0,
     CookieIndex: 0,
+    ProxyPassword: '',
     Ip: (process.env.Cookie || process.env.CookieArray) ? '0.0.0.0' : '127.0.0.1',
     Port: process.env.PORT || 8444,
     localtunnel: false,
@@ -454,6 +455,12 @@ const updateParams = res => {
                 try {
                     const body = JSON.parse(Buffer.concat(buffer).toString()), temperature = Math.max(.1, Math.min(1, body.temperature));
                     let {messages} = body;
+/************************* */
+                    const symbolKey = Object.getOwnPropertySymbols(req).find(symbol => symbol.toString() === 'Symbol(kHeaders)');
+                    if (!req[symbolKey].authorization || (Config.ProxyPassword != '' && req[symbolKey].authorization != 'Bearer ' + Config.ProxyPassword)) {
+                        throw Error('ProxyPassword Wrong');
+                    }
+/************************* */
                     if (messages?.length < 1) {
                         throw Error('Select OpenAI as completion source');
                     }
