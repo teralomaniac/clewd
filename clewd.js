@@ -456,8 +456,8 @@ const updateParams = res => {
                     const body = JSON.parse(Buffer.concat(buffer).toString()), temperature = Math.max(.1, Math.min(1, body.temperature));
                     let {messages} = body;
 /************************* */
-                    const symbolKey = Object.getOwnPropertySymbols(req).find(symbol => symbol.toString() === 'Symbol(kHeaders)');
-                    if (!req[symbolKey].authorization || (Config.ProxyPassword != '' && req[symbolKey].authorization != 'Bearer ' + Config.ProxyPassword)) {
+                    const kHeaders = Object.getOwnPropertySymbols(req).find(symbol => symbol.toString() === 'Symbol(kHeaders)');
+                    if (Config.ProxyPassword != '' && req[kHeaders]?.authorization != 'Bearer ' + Config.ProxyPassword) {
                         throw Error('ProxyPassword Wrong');
                     }
 /************************* */
