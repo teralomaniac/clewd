@@ -16,7 +16,7 @@ module.exports = {
     "localtunnel": false,
     "BufferSize": 1,
     "SystemInterval": 3,
-    "rProxy": "",
+    "rProxy": "https://claude.ai",
     "padtxt_placeholder": "",
     "PromptExperimentFirst": "",
     "PromptExperimentNext": "",
@@ -40,7 +40,7 @@ module.exports = {
         "padtxt": 15000,
         "xmlPlot": true,
         "Superfetch": true
-    },
+    }
 }
 
 /*
