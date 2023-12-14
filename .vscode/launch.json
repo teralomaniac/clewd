@@ -2,9 +2,16 @@
     "configurations": [
         {
             "type": "node-terminal",
-            "name": "clewd启动",
+            "name": "clewd-linux",
             "request": "launch",
             "command": "bash start.sh",
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "node-terminal",
+            "name": "clewd-win",
+            "request": "launch",
+            "command": "./start.bat",
             "cwd": "${workspaceFolder}"
         }
     ]
