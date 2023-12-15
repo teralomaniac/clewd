@@ -12,6 +12,10 @@
 </a>
 </div>
 
+# 4.7
+
+added multiple model options in case you subscribe to their plans. some based on their docs, some on rumors. stick to 2.1 if you're a free user
+
 # 4.6
 
 fixed major bug in the prompt build logic which was causing problems like the AI refering to old messages erroneously, ignoring your latest message, etc

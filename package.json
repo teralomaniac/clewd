@@ -1,6 +1,6 @@
 {
   "name": "clewd",
-  "version": "4.6",
+  "version": "4.7",
   "description": "<div align=\"center\"> <a href=\"https://github.com/teralomaniac/clewd\"> <h1>Clewd</h1>   <img     height=\"120\"     width=\"120\"     alt=\"Clewd\"     title=\"Clewd\"     src=\"https://gitgud.io/ahsk/clewd/-/raw/master/media/logo.png\"     align=\"left\"   />",
   "main": "clewd.js",
   "engines": {
