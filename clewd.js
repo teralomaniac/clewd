@@ -36,12 +36,19 @@ const convertToType = value => {
     Config.Cookie = '';
     writeSettings(Config);
     currentIndex = (currentIndex - 1 + Config.CookieArray.length) % Config.CookieArray.length;
+}, ProModelConvert = model => {
+    if (/^claude-2\.0$/.test(model)) return AI.mdl()[7];
+    if (/1\.3/.test(model)) return AI.mdl()[5];
+    if (/^claude-v1\.\d$/.test(model)) return AI.mdl()[1];
+    if (/100k/.test(model)) return AI.mdl()[2];
+    if (/v1\.\d/.test(model)) return AI.mdl()[3];
+    return model;
 }, padtxt = content => {
     const {countTokens} = require('@anthropic-ai/tokenizer');
     const placeholder = Config.padtxt_placeholder || randomBytes(randomInt(5, 15)).toString('hex');
     tokens = countTokens(content);
-    const padding = placeholder.repeat(Math.floor(Math.max(1000, Config.Settings.padtxt - tokens) / countTokens(placeholder.trim())));
-    content = content.includes('<|padtxt|>') ? content.replace(/<\|padtxt\|>/gm, padding) : !apiKey ? padding + '\n\n\n' + content.trim() : content;
+    const padding = placeholder.repeat(Math.floor((/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.test(content) ? parseInt(/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.exec(content)[0]) : Math.max(1000, Config.Settings.padtxt - tokens)) / countTokens(placeholder.trim())));
+    content = /<\|padtxt.*?\|>/.test(content) ? content.replace(/<\|padtxt.*?\|>/, padding).replace(/\s*<\|padtxt.*?\|>\s*/g, '\n\n') : !apiKey ? padding + '\n\n\n' + content.trim() : content;
     return content;
 }, xmlPlot = (content, nonsys = false) => {
     //role合并
@@ -49,8 +56,8 @@ const convertToType = value => {
     const MergeHumanDisable = content.includes('<|Merge Human Disable|>');
     const MergeAssistantDisable = content.includes('<|Merge Assistant Disable|>');
     if (!MergeDisable) {
-        if (content.includes('<|Merge System Disable|>')) {
-            content = content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+        if (content.includes('<|System Role|>')) {
+            content = content.replace(/(?:\n\n|^\s*)xmlPlot:(.*?(?:\n\n(Assistant|Human):|$))/gs, function(match, p1) {return '\n\nSystem:' + p1.replace(/(\n\n|^\s*)xmlPlot:\s*/g, '\n\n')});
         }
         if (!MergeHumanDisable) {
             nonsys ? content = content.replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:') : content = content.replace(/(\n\n|^\s*)(?<!\n\n(Human|Assistant):.*?)xmlPlot:\s*/gs, '$1').replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:');
@@ -101,7 +108,7 @@ const convertToType = value => {
     content = content.replace(/\s*<\|curtail\|>\s*/g, '\n')
         .replace(/\n<\/(card|hidden|META)>\s+?<\1>\n/g, '\n')
         .replace(/\n<(\/?card|example|hidden|plot|META)>\s+?<\1>/g, '\n<$1>')
-        .replace(/\n(?:<!--.*?-->|Here.*?:)?\n<(card|example|hidden|plot|META)>\s+?<\/\1>/g, '')
+        .replace(/\n(?:<!--.*?-->\n|.+?: ?\n?)?<(card|example|hidden|plot|META)>\s+?<\/\1>/g, '')
         .replace(/(?<=(: |\n)<(card|hidden|example|plot|META|EOT)>\n)\s*/g, '')
         .replace(/\s*(?=\n<\/(card|hidden|example|plot|META|EOT)>(\n|$))/g, '')
         .replace(/(?<=\n)\n(?=\n)/g, '');
@@ -109,7 +116,7 @@ const convertToType = value => {
     if (apiKey) {
         content = content.replace(/\n\n(Assistant|Human):(?!.*?\n\n(Assistant|Human):).*$/s, function(match, p1) {return p1 === 'Assistant' ? match : match + '\n\nAssistant: '}).replace(/\s*<\|noAssistant\|>\s*(.*?)(?:\n\nAssistant:\s*)?$/s, '\n\n$1');
         content.includes('<|reverseHA|>') && (content = content.replace(/\s*<\|reverseHA\|>\s*/g, '\n\n').replace(/Assistant|Human/g, function(match) {return match === 'Human' ? 'Assistant' : 'Human'}).replace(/\n(A|H): /g, function(match, p1) {return p1 === 'A' ? '\nH: ' : '\nA: '}));
-        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^(Human|Assistant):/, '\n\n$&').replace(/\n\n(Human|Assistant):$/, '$& ');
+        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^.+:/, '\n\n$&').replace(/\n\n.+:$/, '$& ');
     } else {
         return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^Human:|\n\nAssistant:$/g, '');
     }
@@ -241,7 +248,7 @@ const updateParams = res => {
     }
     try {
 /***************************** */
-    if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1 || (Config.CookieArray?.length > 0 && invalidtime >= totaltime)) { //if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
+    if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1 || (Config.CookieArray?.length > 0 && invalidtime > totaltime)) { //if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
         return console.log(`[33mNo cookie available, apiKey-Only mode enabled.[0m\n`); //throw Error('Set your cookie inside config.js');
     }
     updateCookies(Config.Cookie.replace(/^(sessionKey=)?/, 'sessionKey=')); //updateCookies(Config.Cookie);
@@ -291,24 +298,18 @@ const updateParams = res => {
     uuidOrg = accInfo?.uuid;
 /************************* */
     model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
-    model != AI.mdl() && console.log(`[33m${model}[0m`);
-    if (model != AI.mdl() && Config.Cookiecounter === -2) {
-        CookieCleaner();
-        return CookieChanger.emit('ChangeCookie');
-    }
     const Overlap = uuidOrgArray.includes(uuidOrg) && percentage <= 100 && Config.CookieArray?.length > 0;
     !Overlap && uuidOrgArray.push(uuidOrg);
     const Unverified = !accountInfo.account.completed_verification_at;
-    const abuseTag = accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0];
-    const Banned = abuseTag.gateValue === 'true' && abuseTag.gate === 'segment:abuse';
+    const Abused = accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gateValue === 'true' && accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gate === 'segment:abuse';
     const Remain = accountInfo.messageLimit?.remaining;
     const Exceededlimit = (accountInfo.messageLimit?.type === 'approaching_limit' && Remain === 0) || accountInfo.messageLimit?.type === 'exceeded_limit';
     if (Remain) {
         changeflag = Math.max(Config.Cookiecounter - Remain, changeflag);
         console.log(`[33mApproachingLimit!: Remain ${Remain}[0m`);
     }
-    if ((Overlap || Unverified || Banned) && Config.CookieArray?.length > 0) {
-        Overlap ? console.log(`[31mOverlap![0m`) : Unverified ? console.log(`[31mUnverified![0m`) : Banned && console.log(`[31mBanned![0m`);
+    if ((Overlap || Unverified || Abused) && Config.CookieArray?.length > 0) {
+        Overlap ? console.log(`[31mOverlap![0m`) : Unverified ? console.log(`[31mUnverified![0m`) : Abused && console.log(`[31mBanned![0m`);
         CookieCleaner();
         Config.Cookiecounter < 0 && console.log(`[progress]: [32m${percentage.toFixed(2)}%[0m\n[length]: [33m${Config.CookieArray.length}[0m\n`);
         return CookieChanger.emit('ChangeCookie');
@@ -392,20 +393,19 @@ const updateParams = res => {
     switch (req.url) {
       case '/v1/models':
         res.json({
-            data: [ {
 /***************************** */
-                id: 'claude-2.1'                },{
-                id: 'claude-2.0'                },{
-                id: 'claude-v1.3'               },{
-                id: 'claude-v1.3-100k'          },{
-                id: 'claude-v1.2'               },{
-                id: 'claude-v1.0'               },{
-                id: 'claude-instant-1.2'        },{
-                id: 'claude-instant-v1.1'       },{
-                id: 'claude-instant-v1.1-100k'  },{
-                id: 'claude-instant-v1.0'       //id: AI.mdl()
+            data: [ //data: AI.mdl().map((name => ({
+                ...AI.mdl().slice(1).map((name => ({ id: name }))), {
+                    id: 'claude-2.0'                },{
+                    id: 'claude-v1.3'               },{
+                    id: 'claude-v1.3-100k'          },{
+                    id: 'claude-v1.2'               },{
+                    id: 'claude-v1.0'               },{
+                    id: 'claude-instant-v1.1'       },{
+                    id: 'claude-instant-v1.1-100k'  },{
+                    id: 'claude-instant-v1.0'       //id: name
+            }] //})))
 /***************************** */
-            } ]
         });
         break;
 
@@ -429,11 +429,10 @@ const updateParams = res => {
 /************************* */
                     apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g);
                     let max_tokens_to_sample, stop_sequences;
-                    if (apiKey) {
+                    if (apiKey || Config.Settings.PassParams) {
                         stop_sequences = body.stop;
                         max_tokens_to_sample = body.max_tokens;
                         model = body.model;
-                        if (!model.includes('claude')) throw Error('Please change to claude model in "External"');
                     } else if (req.headers.authorization.includes('sk-ant-api')) {
                         throw Error('apiKey Wrong');
                     } else if (Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
@@ -473,7 +472,13 @@ const updateParams = res => {
                         console.log('[33mhaving[0m [1mAllSamples[0m and [1mNoSamples[0m both set to true is not supported');
                         throw Error('Only one can be used at the same time: AllSamples/NoSamples');
                     }
-                    //const model = AI.mdl();
+                    //const model = body.model;
+                    if (!apiKey && Config.Settings.PassParams) { //if (model === AI.mdl()[0]) {
+                        model = ProModelConvert(model); //return;
+                    }
+                    if (!/claude-.*/.test(model)) {
+                        throw Error('Invalid model selected: ' + model);
+                    }
                     curPrompt = {
                         firstUser: messages.find((message => 'user' === message.role)),
                         firstSystem: messages.find((message => 'system' === message.role)),
@@ -506,7 +511,7 @@ const updateParams = res => {
                                 completion: {
                                     prompt: '',
                                     timezone: AI.zone(),
-                                    model: model || AI.mdl()
+                                    model
                                 },
                                 organization_uuid: uuidOrg,
                                 conversation_uuid: Conversation.uuid,
@@ -663,13 +668,13 @@ const updateParams = res => {
                     console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
                     'R' !== type || prompt || (prompt = '...regen...');
 /******************************** */
-                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != AI.mdl()) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt);
+                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != 'claude-2.1') : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt);
                     Config.Settings.FullColon && (prompt = apiKey
-                        ? prompt.replace(/(\n\nAssistant|\n\nHuman):/, function(match, p1) {return p1 === '\n\nHuman' ? match : p1 + '：'}).replace(/(\n\nAssistant|\n\nHuman):(?!.*?\n\n(Assistant|Human):)/s, function(match, p1) {return p1 === '\n\nAssistant' ? match : p1 + '：'})
+                        ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：')
                         : prompt.replace(/(?<=\n\n(H(?:uman)?|A(?:ssistant)?)):[ ]?/g, '： '));
                     Config.Settings.padtxt && (prompt = padtxt(prompt));
 /******************************** */
-                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) ${tokens}t PROMPT:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
+                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) ${tokens}t PROMPT:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
@@ -715,11 +720,11 @@ const updateParams = res => {
                                 },
                                 prompt: prompt || '',
                                 timezone: AI.zone(),
-                                model: model || AI.mdl()
+                                model
                             },
                             organization_uuid: uuidOrg,
                             conversation_uuid: Conversation.uuid,
-                            text: prompt,
+                            text: prompt || '',
                             attachments
                         };
                         let headers = {
@@ -750,7 +755,7 @@ const updateParams = res => {
                         version: Main,
                         minSize: Config.BufferSize,
                         model,
-                        streaming: body.stream,
+                        streaming: body.stream, //null != body.stream,
                         abortControl,
                         source: fetchAPI
                     }, Logger);
