@@ -7,7 +7,7 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
-let currentIndex, Firstlogin = true, changeflag = 0, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, tokens, apiKey, timestamp = Date.now();
+let currentIndex, Firstlogin = true, changeflag = 0, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, tokens, apiKey, timestamp = Date.now();
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
@@ -50,24 +50,33 @@ const convertToType = value => {
     const padding = placeholder.repeat(Math.floor((/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.test(content) ? parseInt(/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.exec(content)[0]) : Math.max(1000, Config.Settings.padtxt - tokens)) / countTokens(placeholder.trim())));
     content = /<\|padtxt.*?\|>/.test(content) ? content.replace(/<\|padtxt.*?\|>/, padding).replace(/\s*<\|padtxt.*?\|>\s*/g, '\n\n') : !apiKey ? padding + '\n\n\n' + content.trim() : content;
     return content;
-}, xmlPlot = (content, nonsys = false) => {
-    //role合并
-    const MergeDisable = content.includes('<|Merge Disable|>');
-    const MergeHumanDisable = content.includes('<|Merge Human Disable|>');
-    const MergeAssistantDisable = content.includes('<|Merge Assistant Disable|>');
-    if (!MergeDisable) {
+}, xmlPlot_merge = (content, nonsys) => {
+    if (!content.includes('<|Merge Disable|>')) {
         if (content.includes('<|System Role|>')) {
-            content = content.replace(/(?:\n\n|^\s*)xmlPlot:(.*?(?:\n\n(Assistant|Human):|$))/gs, function(match, p1) {return '\n\nSystem:' + p1.replace(/(\n\n|^\s*)xmlPlot:\s*/g, '\n\n')});
+            content = content.replace(/(?:\n\n|^\s*)(?:xmlPlot|System):(.*?(?:\n\n(Assistant|Human):|$))/gs, function(match, p1) {return '\n\nSystem:' + p1.replace(/(\n\n|^\s*)(xmlPlot|System):\s*/g, '\n\n')});
         }
-        if (!MergeHumanDisable) {
+        if (!content.includes('<|Merge Human Disable|>')) {
             nonsys ? content = content.replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:') : content = content.replace(/(\n\n|^\s*)(?<!\n\n(Human|Assistant):.*?)xmlPlot:\s*/gs, '$1').replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:');
             content = content.replace(/(?:\n\n|^\s*)Human:(.*?(?:\n\nAssistant:|$))/gs, function(match, p1) {return '\n\nHuman:' + p1.replace(/\n\nHuman:\s*/g, '\n\n')});
         }
-        if (!MergeAssistantDisable) {
+        if (!content.includes('<|Merge Assistant Disable|>')) {
             content = content.replace(/\n\nAssistant:(.*?(?:\n\nHuman:|$))/gs, function(match, p1) {return '\n\nAssistant:' + p1.replace(/\n\nAssistant:\s*/g, '\n\n')});
         }
     }
-    content = content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+    return content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+}, xmlPlot_regex = (content, order) => {
+    let match, regex = new RegExp(`<regex(?: +order *= *${order})${order === 2 ? '?' : ''}> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>`, 'gm');
+    while ((match = regex.exec(content)) !== null) {
+        try {
+            content = content.replace(new RegExp(match[2], match[3]), match[4].replace(/(\r\n|\r|\\n)/gm, '\n'));
+        } catch (err) {}
+    }
+    return content;
+}, xmlPlot = (content, nonsys = false) => {
+    //一次正则
+    content = xmlPlot_regex(content, 1);
+    //一次role合并
+    content = xmlPlot_merge(content, nonsys);
     //自定义插入
     content = content.replace(/(<\/?)PrevAssistant>/gm, '$1@1>').replace(/(<\/?)PrevHuman>/gm, '$1@2>');
     let splitContent = content.split(/\n\n(?=Assistant:|Human:)/g);
@@ -81,34 +90,25 @@ const convertToType = value => {
     }
     content = splitContent.join('\n\n');
     content = content.replace(/<@(\d+)>.*?<\/@\1>/gs, '');
-    //正则
-    while ((match = /<regex>"(\/?)(.*)\1(.*)" *: *"(.*?)"<\/regex>/gm.exec(content)) !== null) {
-        try {
-            content = content.replace(new RegExp(match[2], match[3]), match[4]);
-        } catch (error) {}
-        content = content.replace(match[0], '');
-    }
-    content = content.replace(/(\r\n|\r|\\n)/gm, '\n');
+    //二次正则
+    content = xmlPlot_regex(content, 2);
     //二次role合并
-    if (!MergeDisable) {
-        if (!MergeHumanDisable) {
-            content = content.replace(/(?:\n\n|^\s*)Human:(.*?(?:\n\nAssistant:|$))/gs, function(match, p1) {return '\n\nHuman:' + p1.replace(/\n\nHuman:\s*/g, '\n\n')});
-        }
-        if (!MergeAssistantDisable) {
-            content = content.replace(/\n\nAssistant:(.*?(?:\n\nHuman:|$))/gs, function(match, p1) {return '\n\nAssistant:' + p1.replace(/\n\nAssistant:\s*/g, '\n\n')});
-        }
-    }
+    content = xmlPlot_merge(content, nonsys);
     //Plain Prompt
     let segcontentHuman = content.split('\n\nHuman:');
     let segcontentlastIndex = segcontentHuman.length - 1;
     if (!apiKey && segcontentlastIndex >= 2 && segcontentHuman[segcontentlastIndex].includes('<|Plain Prompt Enable|>') && !content.includes('\n\nPlainPrompt:')) {
         content = segcontentHuman.slice(0, segcontentlastIndex).join('\n\nHuman:') + '\n\nPlainPrompt:' + segcontentHuman.slice(segcontentlastIndex).join('\n\nHuman:').replace(/\n\nHuman: *PlainPrompt:/, '\n\nPlainPrompt:');
     }
+    //三次正则
+    content = xmlPlot_regex(content, 3);
     //消除空XML tags、两端空白符和多余的\n
-    content = content.replace(/\s*<\|curtail\|>\s*/g, '\n')
+    content = content.replace(/<regex>.*?<\/regex>/gm, '')
+        .replace(/(\r\n|\r|\\n)/gm, '\n')
+        .replace(/\s*<\|curtail\|>\s*/g, '\n')
         .replace(/\n<\/(card|hidden|META)>\s+?<\1>\n/g, '\n')
         .replace(/\n<(\/?card|example|hidden|plot|META)>\s+?<\1>/g, '\n<$1>')
-        .replace(/\n(?:<!--.*?-->\n|.+?: ?\n?)?<(card|example|hidden|plot|META)>\s+?<\/\1>/g, '')
+        .replace(/(?:<!--.*?-->\n|.+?: ?\n)?<(card|example|hidden|plot|META)>\s+?<\/\1>\n*/g, '')
         .replace(/(?<=(: |\n)<(card|hidden|example|plot|META|EOT)>\n)\s*/g, '')
         .replace(/\s*(?=\n<\/(card|hidden|example|plot|META|EOT)>(\n|$))/g, '')
         .replace(/(?<=\n)\n(?=\n)/g, '');
@@ -289,15 +289,17 @@ const updateParams = res => {
     });
     await checkResErr(accountRes);
     const accountInfo = await accountRes.json();
+    model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
 /**************************** */
     console.log(Config.CookieArray?.length > 0 ? `(index: [36m${currentIndex || Config.CookieArray.length}[0m) Logged in %o` : 'Logged in %o', { //console.log('Logged in %o', {
         name: accInfo.name?.split('@')?.[0],
         mail: accountInfo.account.email_address, //
+        model, //
         capabilities: accInfo.capabilities,
     });
     uuidOrg = accInfo?.uuid;
 /************************* */
-    model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
+    if (reqModel && model != reqModel) return CookieChanger.emit('ChangeCookie');
     const Overlap = uuidOrgArray.includes(uuidOrg) && percentage <= 100 && Config.CookieArray?.length > 0;
     !Overlap && uuidOrgArray.push(uuidOrg);
     const Unverified = !accountInfo.account.completed_verification_at;
@@ -427,7 +429,8 @@ const updateParams = res => {
                     const body = JSON.parse(Buffer.concat(buffer).toString()), temperature = Math.max(.1, Math.min(1, body.temperature));
                     let {messages} = body;
 /************************* */
-                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g);
+                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey: *)[\S]*/);
+                    reqModel = /^claude-2.[01]$/.test(body.model) ? body.model : '';
                     let max_tokens_to_sample, stop_sequences;
                     if (apiKey || Config.Settings.PassParams) {
                         stop_sequences = body.stop;
@@ -437,9 +440,9 @@ const updateParams = res => {
                         throw Error('apiKey Wrong');
                     } else if (Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
                         throw Error('ProxyPassword Wrong');
-                    } else if (Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length) {
+                    } else if (Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length || reqModel && reqModel != body.model && !Config.Settings.PassParams) {
                         invalidtime = 0;
-                        return CookieChanger.emit('ChangeCookie');
+                        throw Error(reqModel ? 'Polling requset model...' : 'Changing Cookie...');
                     }
 /************************* */
                     if (messages?.length < 1) {
@@ -661,14 +664,14 @@ const updateParams = res => {
                             } //
                         }));
                         return {
-                            prompt: prompt.join('').trim(), //genericFixes(prompt.join('')).trim(),
+                            prompt: prompt.join(''), //genericFixes(prompt.join('')).trim(),
                             systems
                         };
                     })(messages, type);
                     console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
                     'R' !== type || prompt || (prompt = '...regen...');
 /******************************** */
-                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != 'claude-2.1') : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt);
+                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != 'claude-2.1') : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt).trim();
                     Config.Settings.FullColon && (prompt = apiKey
                         ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：')
                         : prompt.replace(/(?<=\n\n(H(?:uman)?|A(?:ssistant)?)):[ ]?/g, '： '));
