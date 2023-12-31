@@ -7,14 +7,14 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
-let currentIndex, Firstlogin = true, changeflag = 0, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, tokens, apiKey, timestamp = Date.now();
+let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp = Date.now();
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
 
 CookieChanger.on('ChangeCookie', () => {
     setTimeout(() => {
-        changeflag = 0;
+        changeflag = 0, changing = true;
         Proxy && Proxy.close();
         console.log(`Changing Cookie...\n`);
         Proxy.listen(Config.Port, Config.Ip, onListen);
@@ -40,27 +40,36 @@ const convertToType = value => {
     const {countTokens} = require('@anthropic-ai/tokenizer');
     const placeholder = Config.padtxt_placeholder || randomBytes(randomInt(5, 15)).toString('hex');
     tokens = countTokens(content);
-    const padding = placeholder.repeat(Math.floor(Math.max(1000, Config.Settings.padtxt - tokens) / countTokens(placeholder.trim())));
-    content = content.includes('<|padtxt|>') ? content.replace(/<\|padtxt\|>/gm, padding) : !apiKey ? padding + '\n\n\n' + content.trim() : content;
+    const padding = placeholder.repeat(Math.floor((/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.test(content) ? parseInt(/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.exec(content)[0]) : Math.max(1000, Config.Settings.padtxt - tokens)) / countTokens(placeholder.trim())));
+    content = /<\|padtxt.*?\|>/.test(content) ? content.replace(/<\|padtxt.*?\|>/, padding).replace(/\s*<\|padtxt.*?\|>\s*/g, '\n\n') : !apiKey ? padding + '\n\n\n' + content.trim() : content;
     return content;
-}, xmlPlot = (content, nonsys = false) => {
-    //role合并
-    const MergeDisable = content.includes('<|Merge Disable|>');
-    const MergeHumanDisable = content.includes('<|Merge Human Disable|>');
-    const MergeAssistantDisable = content.includes('<|Merge Assistant Disable|>');
-    if (!MergeDisable) {
-        if (content.includes('<|Merge System Disable|>')) {
-            content = content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+}, xmlPlot_merge = (content, nonsys) => {
+    if (!content.includes('<|Merge Disable|>')) {
+        if (content.includes('<|System Role|>')) {
+            content = content.replace(/(?:\n\n|^\s*)(?:xmlPlot|System):(.*?(?:\n\n(Assistant|Human):|$))/gs, function(match, p1) {return '\n\nSystem:' + p1.replace(/(\n\n|^\s*)(xmlPlot|System):\s*/g, '\n\n')});
         }
-        if (!MergeHumanDisable) {
+        if (!content.includes('<|Merge Human Disable|>')) {
             nonsys ? content = content.replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:') : content = content.replace(/(\n\n|^\s*)(?<!\n\n(Human|Assistant):.*?)xmlPlot:\s*/gs, '$1').replace(/(\n\n|^\s*)xmlPlot:/g, '\n\nHuman:');
             content = content.replace(/(?:\n\n|^\s*)Human:(.*?(?:\n\nAssistant:|$))/gs, function(match, p1) {return '\n\nHuman:' + p1.replace(/\n\nHuman:\s*/g, '\n\n')});
         }
-        if (!MergeAssistantDisable) {
+        if (!content.includes('<|Merge Assistant Disable|>')) {
             content = content.replace(/\n\nAssistant:(.*?(?:\n\nHuman:|$))/gs, function(match, p1) {return '\n\nAssistant:' + p1.replace(/\n\nAssistant:\s*/g, '\n\n')});
         }
     }
-    content = content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+    return content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
+}, xmlPlot_regex = (content, order) => {
+    let match, regex = new RegExp(`<regex(?: +order *= *${order})${order === 2 ? '?' : ''}> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>`, 'gm');
+    while ((match = regex.exec(content)) !== null) {
+        try {
+            content = content.replace(new RegExp(match[2], match[3]), match[4].replace(/(\r\n|\r|\\n)/gm, '\n'));
+        } catch (err) {}
+    }
+    return content;
+}, xmlPlot = (content, nonsys = false) => {
+    //一次正则
+    content = xmlPlot_regex(content, 1);
+    //一次role合并
+    content = xmlPlot_merge(content, nonsys);
     //自定义插入
     content = content.replace(/(<\/?)PrevAssistant>/gm, '$1@1>').replace(/(<\/?)PrevHuman>/gm, '$1@2>');
     let splitContent = content.split(/\n\n(?=Assistant:|Human:)/g);
@@ -74,34 +83,25 @@ const convertToType = value => {
     }
     content = splitContent.join('\n\n');
     content = content.replace(/<@(\d+)>.*?<\/@\1>/gs, '');
-    //正则
-    while ((match = /<regex>"(\/?)(.*)\1(.*)" *: *"(.*?)"<\/regex>/gm.exec(content)) !== null) {
-        try {
-            content = content.replace(new RegExp(match[2], match[3]), match[4]);
-        } catch (error) {}
-        content = content.replace(match[0], '');
-    }
-    content = content.replace(/(\r\n|\r|\\n)/gm, '\n');
+    //二次正则
+    content = xmlPlot_regex(content, 2);
     //二次role合并
-    if (!MergeDisable) {
-        if (!MergeHumanDisable) {
-            content = content.replace(/(?:\n\n|^\s*)Human:(.*?(?:\n\nAssistant:|$))/gs, function(match, p1) {return '\n\nHuman:' + p1.replace(/\n\nHuman:\s*/g, '\n\n')});
-        }
-        if (!MergeAssistantDisable) {
-            content = content.replace(/\n\nAssistant:(.*?(?:\n\nHuman:|$))/gs, function(match, p1) {return '\n\nAssistant:' + p1.replace(/\n\nAssistant:\s*/g, '\n\n')});
-        }
-    }
+    content = xmlPlot_merge(content, nonsys);
     //Plain Prompt
     let segcontentHuman = content.split('\n\nHuman:');
     let segcontentlastIndex = segcontentHuman.length - 1;
     if (!apiKey && segcontentlastIndex >= 2 && segcontentHuman[segcontentlastIndex].includes('<|Plain Prompt Enable|>') && !content.includes('\n\nPlainPrompt:')) {
         content = segcontentHuman.slice(0, segcontentlastIndex).join('\n\nHuman:') + '\n\nPlainPrompt:' + segcontentHuman.slice(segcontentlastIndex).join('\n\nHuman:').replace(/\n\nHuman: *PlainPrompt:/, '\n\nPlainPrompt:');
     }
+    //三次正则
+    content = xmlPlot_regex(content, 3);
     //消除空XML tags、两端空白符和多余的\n
-    content = content.replace(/\s*<\|curtail\|>\s*/g, '\n')
+    content = content.replace(/<regex>.*?<\/regex>/gm, '')
+        .replace(/(\r\n|\r|\\n)/gm, '\n')
+        .replace(/\s*<\|curtail\|>\s*/g, '\n')
         .replace(/\n<\/(card|hidden|META)>\s+?<\1>\n/g, '\n')
         .replace(/\n<(\/?card|example|hidden|plot|META)>\s+?<\1>/g, '\n<$1>')
-        .replace(/\n(?:<!--.*?-->|Here.*?:)?\n<(card|example|hidden|plot|META)>\s+?<\/\1>/g, '')
+        .replace(/(?:<!--.*?-->\n|.+?: ?\n)?<(card|example|hidden|plot|META)>\s+?<\/\1>\n*/g, '')
         .replace(/(?<=(: |\n)<(card|hidden|example|plot|META|EOT)>\n)\s*/g, '')
         .replace(/\s*(?=\n<\/(card|hidden|example|plot|META|EOT)>(\n|$))/g, '')
         .replace(/(?<=\n)\n(?=\n)/g, '');
@@ -109,7 +109,7 @@ const convertToType = value => {
     if (apiKey) {
         content = content.replace(/\n\n(Assistant|Human):(?!.*?\n\n(Assistant|Human):).*$/s, function(match, p1) {return p1 === 'Assistant' ? match : match + '\n\nAssistant: '}).replace(/\s*<\|noAssistant\|>\s*(.*?)(?:\n\nAssistant:\s*)?$/s, '\n\n$1');
         content.includes('<|reverseHA|>') && (content = content.replace(/\s*<\|reverseHA\|>\s*/g, '\n\n').replace(/Assistant|Human/g, function(match) {return match === 'Human' ? 'Assistant' : 'Human'}).replace(/\n(A|H): /g, function(match, p1) {return p1 === 'A' ? '\nH: ' : '\nA: '}));
-        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^(Human|Assistant):/, '\n\n$&').replace(/\n\n(Human|Assistant):$/, '$& ');
+        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^.+:/, '\n\n$&').replace(/\n\n.+:$/, '$& ');
     } else {
         return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^Human:|\n\nAssistant:$/g, '');
     }
@@ -241,7 +241,7 @@ const updateParams = res => {
     }
     try {
 /***************************** */
-    if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1 || (Config.CookieArray?.length > 0 && invalidtime >= totaltime)) { //if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
+    if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1 || (Config.CookieArray?.length > 0 && invalidtime > totaltime)) { //if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
         return console.log(`[33mNo cookie available, apiKey-Only mode enabled.[0m\n`); //throw Error('Set your cookie inside config.js');
     }
     updateCookies(Config.Cookie.replace(/^(sessionKey=)?/, 'sessionKey=')); //updateCookies(Config.Cookie);
@@ -282,33 +282,29 @@ const updateParams = res => {
     });
     await checkResErr(accountRes);
     const accountInfo = await accountRes.json();
+    model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model, cookieModel = model;
 /**************************** */
     console.log(Config.CookieArray?.length > 0 ? `(index: [36m${currentIndex || Config.CookieArray.length}[0m) Logged in %o` : 'Logged in %o', { //console.log('Logged in %o', {
         name: accInfo.name?.split('@')?.[0],
         mail: accountInfo.account.email_address, //
-        capabilities: accInfo.capabilities,
+        model, //
+        capabilities: accInfo.capabilities
     });
     uuidOrg = accInfo?.uuid;
 /************************* */
-    model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
-    model != AI.mdl() && console.log(`[33m${model}[0m`);
-    if (model != AI.mdl() && Config.Cookiecounter === -2) {
-        CookieCleaner();
-        return CookieChanger.emit('ChangeCookie');
-    }
+    if (reqModel && reqModel != cookieModel && !Config.Settings.PassParams) return CookieChanger.emit('ChangeCookie');
     const Overlap = uuidOrgArray.includes(uuidOrg) && percentage <= 100 && Config.CookieArray?.length > 0;
     !Overlap && uuidOrgArray.push(uuidOrg);
     const Unverified = !accountInfo.account.completed_verification_at;
-    const abuseTag = accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0];
-    const Banned = abuseTag.gateValue === 'true' && abuseTag.gate === 'segment:abuse';
+    const Abused = accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gateValue === 'true' && accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gate === 'segment:abuse';
     const Remain = accountInfo.messageLimit?.remaining;
     const Exceededlimit = (accountInfo.messageLimit?.type === 'approaching_limit' && Remain === 0) || accountInfo.messageLimit?.type === 'exceeded_limit';
     if (Remain) {
         changeflag = Math.max(Config.Cookiecounter - Remain, changeflag);
         console.log(`[33mApproachingLimit!: Remain ${Remain}[0m`);
     }
-    if ((Overlap || Unverified || Banned) && Config.CookieArray?.length > 0) {
-        Overlap ? console.log(`[31mOverlap![0m`) : Unverified ? console.log(`[31mUnverified![0m`) : Banned && console.log(`[31mBanned![0m`);
+    if ((Overlap || Unverified || Abused) && Config.CookieArray?.length > 0) {
+        Overlap ? console.log(`[31mOverlap![0m`) : Unverified ? console.log(`[31mUnverified![0m`) : Abused && console.log(`[31mBanned![0m`);
         CookieCleaner();
         Config.Cookiecounter < 0 && console.log(`[progress]: [32m${percentage.toFixed(2)}%[0m\n[length]: [33m${Config.CookieArray.length}[0m\n`);
         return CookieChanger.emit('ChangeCookie');
@@ -366,7 +362,7 @@ const updateParams = res => {
     updateParams(convRes);
     conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
 /***************************** */
-    invalidtime = 0;
+    invalidtime = 0, changing = false;
     } catch (err) {
         console.error('[33mClewd:[0m\n%o', err);
         Config.CookieArray?.length > 0 && CookieChanger.emit('ChangeCookie');
@@ -392,20 +388,19 @@ const updateParams = res => {
     switch (req.url) {
       case '/v1/models':
         res.json({
-            data: [ {
 /***************************** */
-                id: 'claude-2.1'                },{
-                id: 'claude-2.0'                },{
-                id: 'claude-v1.3'               },{
-                id: 'claude-v1.3-100k'          },{
-                id: 'claude-v1.2'               },{
-                id: 'claude-v1.0'               },{
-                id: 'claude-instant-1.2'        },{
-                id: 'claude-instant-v1.1'       },{
-                id: 'claude-instant-v1.1-100k'  },{
-                id: 'claude-instant-v1.0'       //id: AI.mdl()
+            data: [ //data: AI.mdl().map((name => ({
+                ...AI.mdl().slice(1).map((name => ({ id: name }))), {
+                    id: 'claude-2'                  },{
+                    id: 'claude-v1.3'               },{
+                    id: 'claude-v1.3-100k'          },{
+                    id: 'claude-v1.2'               },{
+                    id: 'claude-v1.0'               },{
+                    id: 'claude-instant-v1.1'       },{
+                    id: 'claude-instant-v1.1-100k'  },{
+                    id: 'claude-instant-v1.0'       //id: name
+            }] //})))
 /***************************** */
-            } ]
         });
         break;
 
@@ -424,23 +419,23 @@ const updateParams = res => {
             req.on('end', (async () => {
                 let clewdStream, titleTimer, samePrompt = false, shouldRenew = true, retryRegen = false;
                 try {
-                    const body = JSON.parse(Buffer.concat(buffer).toString()), temperature = Math.max(.1, Math.min(1, body.temperature));
+                    const body = JSON.parse(Buffer.concat(buffer).toString());
+                    let {temperature} = body;
+                    temperature = Math.max(.1, Math.min(1, temperature));
                     let {messages} = body;
 /************************* */
-                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g);
+                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey: *)[\S]*/);
+                    reqModel = /^claude-2.[01]$/.test(body.model) ? body.model : '';
                     let max_tokens_to_sample, stop_sequences;
-                    if (apiKey) {
+                    if (apiKey || Config.Settings.PassParams) {
                         stop_sequences = body.stop;
                         max_tokens_to_sample = body.max_tokens;
                         model = body.model;
-                        if (!model.includes('claude')) throw Error('Please change to claude model in "External"');
-                    } else if (req.headers.authorization.includes('sk-ant-api')) {
-                        throw Error('apiKey Wrong');
-                    } else if (Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
-                        throw Error('ProxyPassword Wrong');
-                    } else if (Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length) {
-                        invalidtime = 0;
-                        return CookieChanger.emit('ChangeCookie');
+                    } else if (req.headers.authorization.includes('sk-ant-api') || Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
+                        throw Error(req.headers.authorization.includes('sk-ant-api') ? 'apiKey Wrong' : 'ProxyPassword Wrong');
+                    } else if (changing || Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length || reqModel && reqModel != cookieModel && !Config.Settings.PassParams) {
+                        changing ? invalidtime = 0 : changeflag = -1;
+                        throw Error(reqModel && reqModel != cookieModel && !Config.Settings.PassParams ? 'Polling requset model...' : 'Changing Cookie...');
                     }
 /************************* */
                     if (messages?.length < 1) {
@@ -473,7 +468,13 @@ const updateParams = res => {
                         console.log('[33mhaving[0m [1mAllSamples[0m and [1mNoSamples[0m both set to true is not supported');
                         throw Error('Only one can be used at the same time: AllSamples/NoSamples');
                     }
-                    //const model = AI.mdl();
+                    //const model = body.model;
+                    //if (model === AI.mdl()[0]) {
+                    //    return;
+                    //}
+                    if (!/claude-.*/.test(model)) {
+                        throw Error('Invalid model selected: ' + model);
+                    }
                     curPrompt = {
                         firstUser: messages.find((message => 'user' === message.role)),
                         firstSystem: messages.find((message => 'system' === message.role)),
@@ -506,7 +507,7 @@ const updateParams = res => {
                                 completion: {
                                     prompt: '',
                                     timezone: AI.zone(),
-                                    model: model || AI.mdl()
+                                    model
                                 },
                                 organization_uuid: uuidOrg,
                                 conversation_uuid: Conversation.uuid,
@@ -656,20 +657,20 @@ const updateParams = res => {
                             } //
                         }));
                         return {
-                            prompt: prompt.join('').trim(), //genericFixes(prompt.join('')).trim(),
+                            prompt: prompt.join(''), //genericFixes(prompt.join('')).trim(),
                             systems
                         };
                     })(messages, type);
                     console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
                     'R' !== type || prompt || (prompt = '...regen...');
 /******************************** */
-                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != AI.mdl()) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt);
+                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, model != 'claude-2.1') : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt).trim();
                     Config.Settings.FullColon && (prompt = apiKey
-                        ? prompt.replace(/(\n\nAssistant|\n\nHuman):/, function(match, p1) {return p1 === '\n\nHuman' ? match : p1 + '：'}).replace(/(\n\nAssistant|\n\nHuman):(?!.*?\n\n(Assistant|Human):)/s, function(match, p1) {return p1 === '\n\nAssistant' ? match : p1 + '：'})
+                        ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：')
                         : prompt.replace(/(?<=\n\n(H(?:uman)?|A(?:ssistant)?)):[ ]?/g, '： '));
                     Config.Settings.padtxt && (prompt = padtxt(prompt));
 /******************************** */
-                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) ${tokens}t PROMPT:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
+                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) ${tokens}t PROMPT:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
@@ -715,11 +716,11 @@ const updateParams = res => {
                                 },
                                 prompt: prompt || '',
                                 timezone: AI.zone(),
-                                model: model || AI.mdl()
+                                model
                             },
-                            organization_uuid: uuidOrg,
                             conversation_uuid: Conversation.uuid,
-                            text: prompt,
+                            organization_uuid: uuidOrg,
+                            text: prompt || '',
                             attachments
                         };
                         let headers = {
@@ -750,7 +751,7 @@ const updateParams = res => {
                         version: Main,
                         minSize: Config.BufferSize,
                         model,
-                        streaming: body.stream,
+                        streaming: body.stream, //null != body.stream,
                         abortControl,
                         source: fetchAPI
                     }, Logger);
@@ -760,6 +761,7 @@ const updateParams = res => {
                     if ('AbortError' === err.name) {
                         res.end();
                     } else {
+                        changeflag -= 1; //
                         err.planned || console.error('[33mClewd:[0m\n%o', err);
                         res.json({
                             error: {
@@ -768,7 +770,7 @@ const updateParams = res => {
                                 param: null,
                                 code: err.code || 500
                             }
-                        });
+                        }, 500);
                     }
                 }
                 clearInterval(titleTimer);
@@ -779,11 +781,11 @@ const updateParams = res => {
                     429 == fetchAPI?.status ? console.log(`[35mExceeded limit![0m\n`) : console.log(`${200 == fetchAPI?.status ? '[32m' : '[33m'}${fetchAPI?.status}![0m\n`); //console.log(`${200 == fetchAPI.status ? '[32m' : '[33m'}${fetchAPI.status}![0m\n`);
                     clewdStream.empty();
                 }
-                if (!apiKey) { //if (prevImpersonated) {
-                    await deleteChat(Conversation.uuid);
+                if (!apiKey) { //if (prevImpersonated) { try {
+                    await deleteChat(Conversation.uuid); //} catch (err) {}
 /******************************** */
                     changeflag += 1;
-                    if (Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
+                    if (changeflag < 0 || Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
                         changeflag = 0;
                         CookieChanger.emit('ChangeCookie');
                     }
@@ -796,7 +798,7 @@ const updateParams = res => {
       case '/v1/complete':
         res.json({
             error: {
-                message: 'clewd: Set "Chat Completion" to OpenAI instead of Claude. Enable "External" models aswell'
+                message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell'
             }
         });
         break;
