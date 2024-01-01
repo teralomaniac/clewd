@@ -7,14 +7,18 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
+<<<<<<< HEAD
 let currentIndex, Firstlogin = true, changeflag = 0, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, tokens, apiKey, timestamp = Date.now();
+=======
+let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp = Date.now();
+>>>>>>> 8de2f6dd07b8e5cc8b21f691992ddd62ea603b34
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
 
 CookieChanger.on('ChangeCookie', () => {
     setTimeout(() => {
-        changeflag = 0;
+        changeflag = 0, changing = true;
         Proxy && Proxy.close();
         console.log(`Changing Cookie...\n`);
         Proxy.listen(Config.Port, Config.Ip, onListen);
@@ -36,13 +40,6 @@ const convertToType = value => {
     Config.Cookie = '';
     writeSettings(Config);
     currentIndex = (currentIndex - 1 + Config.CookieArray.length) % Config.CookieArray.length;
-}, ProModelConvert = model => {
-    if (/^claude-2\.0$/.test(model)) return AI.mdl()[7];
-    if (/1\.3/.test(model)) return AI.mdl()[5];
-    if (/^claude-v1\.\d$/.test(model)) return AI.mdl()[1];
-    if (/100k/.test(model)) return AI.mdl()[2];
-    if (/v1\.\d/.test(model)) return AI.mdl()[3];
-    return model;
 }, padtxt = content => {
     const {countTokens} = require('@anthropic-ai/tokenizer');
     const placeholder = Config.padtxt_placeholder || randomBytes(randomInt(5, 15)).toString('hex');
@@ -289,17 +286,29 @@ const updateParams = res => {
     });
     await checkResErr(accountRes);
     const accountInfo = await accountRes.json();
+<<<<<<< HEAD
     model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
+=======
+    model = accountInfo.account.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model, cookieModel = model;
+>>>>>>> 8de2f6dd07b8e5cc8b21f691992ddd62ea603b34
 /**************************** */
     console.log(Config.CookieArray?.length > 0 ? `(index: [36m${currentIndex || Config.CookieArray.length}[0m) Logged in %o` : 'Logged in %o', { //console.log('Logged in %o', {
         name: accInfo.name?.split('@')?.[0],
         mail: accountInfo.account.email_address, //
         model, //
+<<<<<<< HEAD
         capabilities: accInfo.capabilities,
     });
     uuidOrg = accInfo?.uuid;
 /************************* */
     if (reqModel && model != reqModel) return CookieChanger.emit('ChangeCookie');
+=======
+        capabilities: accInfo.capabilities
+    });
+    uuidOrg = accInfo?.uuid;
+/************************* */
+    if (reqModel && reqModel != cookieModel && !Config.Settings.PassParams) return CookieChanger.emit('ChangeCookie');
+>>>>>>> 8de2f6dd07b8e5cc8b21f691992ddd62ea603b34
     const Overlap = uuidOrgArray.includes(uuidOrg) && percentage <= 100 && Config.CookieArray?.length > 0;
     !Overlap && uuidOrgArray.push(uuidOrg);
     const Unverified = !accountInfo.account.completed_verification_at;
@@ -369,7 +378,7 @@ const updateParams = res => {
     updateParams(convRes);
     conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
 /***************************** */
-    invalidtime = 0;
+    invalidtime = 0, changing = false;
     } catch (err) {
         console.error('[33mClewd:[0m\n%o', err);
         Config.CookieArray?.length > 0 && CookieChanger.emit('ChangeCookie');
@@ -398,7 +407,7 @@ const updateParams = res => {
 /***************************** */
             data: [ //data: AI.mdl().map((name => ({
                 ...AI.mdl().slice(1).map((name => ({ id: name }))), {
-                    id: 'claude-2.0'                },{
+                    id: 'claude-2'                  },{
                     id: 'claude-v1.3'               },{
                     id: 'claude-v1.3-100k'          },{
                     id: 'claude-v1.2'               },{
@@ -426,7 +435,9 @@ const updateParams = res => {
             req.on('end', (async () => {
                 let clewdStream, titleTimer, samePrompt = false, shouldRenew = true, retryRegen = false;
                 try {
-                    const body = JSON.parse(Buffer.concat(buffer).toString()), temperature = Math.max(.1, Math.min(1, body.temperature));
+                    const body = JSON.parse(Buffer.concat(buffer).toString());
+                    let {temperature} = body;
+                    temperature = Math.max(.1, Math.min(1, temperature));
                     let {messages} = body;
 /************************* */
                     apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey: *)[\S]*/);
@@ -436,6 +447,7 @@ const updateParams = res => {
                         stop_sequences = body.stop;
                         max_tokens_to_sample = body.max_tokens;
                         model = body.model;
+<<<<<<< HEAD
                     } else if (req.headers.authorization.includes('sk-ant-api')) {
                         throw Error('apiKey Wrong');
                     } else if (Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
@@ -443,6 +455,13 @@ const updateParams = res => {
                     } else if (Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length || reqModel && reqModel != body.model && !Config.Settings.PassParams) {
                         invalidtime = 0;
                         throw Error(reqModel ? 'Polling requset model...' : 'Changing Cookie...');
+=======
+                    } else if (req.headers.authorization.includes('sk-ant-api') || Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
+                        throw Error(req.headers.authorization.includes('sk-ant-api') ? 'apiKey Wrong' : 'ProxyPassword Wrong');
+                    } else if (changing || Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length || reqModel && reqModel != cookieModel && !Config.Settings.PassParams) {
+                        changing ? invalidtime = 0 : changeflag = -1;
+                        throw Error(reqModel && reqModel != cookieModel && !Config.Settings.PassParams ? 'Polling requset model...' : 'Changing Cookie...');
+>>>>>>> 8de2f6dd07b8e5cc8b21f691992ddd62ea603b34
                     }
 /************************* */
                     if (messages?.length < 1) {
@@ -476,9 +495,9 @@ const updateParams = res => {
                         throw Error('Only one can be used at the same time: AllSamples/NoSamples');
                     }
                     //const model = body.model;
-                    if (!apiKey && Config.Settings.PassParams) { //if (model === AI.mdl()[0]) {
-                        model = ProModelConvert(model); //return;
-                    }
+                    //if (model === AI.mdl()[0]) {
+                    //    return;
+                    //}
                     if (!/claude-.*/.test(model)) {
                         throw Error('Invalid model selected: ' + model);
                     }
@@ -725,8 +744,8 @@ const updateParams = res => {
                                 timezone: AI.zone(),
                                 model
                             },
-                            organization_uuid: uuidOrg,
                             conversation_uuid: Conversation.uuid,
+                            organization_uuid: uuidOrg,
                             text: prompt || '',
                             attachments
                         };
@@ -768,6 +787,7 @@ const updateParams = res => {
                     if ('AbortError' === err.name) {
                         res.end();
                     } else {
+                        changeflag -= 1; //
                         err.planned || console.error('[33mClewd:[0m\n%o', err);
                         res.json({
                             error: {
@@ -776,7 +796,7 @@ const updateParams = res => {
                                 param: null,
                                 code: err.code || 500
                             }
-                        });
+                        }, 500);
                     }
                 }
                 clearInterval(titleTimer);
@@ -787,11 +807,11 @@ const updateParams = res => {
                     429 == fetchAPI?.status ? console.log(`[35mExceeded limit![0m\n`) : console.log(`${200 == fetchAPI?.status ? '[32m' : '[33m'}${fetchAPI?.status}![0m\n`); //console.log(`${200 == fetchAPI.status ? '[32m' : '[33m'}${fetchAPI.status}![0m\n`);
                     clewdStream.empty();
                 }
-                if (!apiKey) { //if (prevImpersonated) {
-                    await deleteChat(Conversation.uuid);
+                if (!apiKey) { //if (prevImpersonated) { try {
+                    await deleteChat(Conversation.uuid); //} catch (err) {}
 /******************************** */
                     changeflag += 1;
-                    if (Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
+                    if (changeflag < 0 || Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
                         changeflag = 0;
                         CookieChanger.emit('ChangeCookie');
                     }
@@ -804,7 +824,7 @@ const updateParams = res => {
       case '/v1/complete':
         res.json({
             error: {
-                message: 'clewd: Set "Chat Completion" to OpenAI instead of Claude. Enable "External" models aswell'
+                message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell'
             }
         });
         break;
