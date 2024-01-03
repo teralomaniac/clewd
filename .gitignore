@@ -16,7 +16,7 @@ cookies.ini
 lib/bin/cfg
 lib/bin/hdr
 lib/bin/pyld
-config.js
+#config.js
 log.txt
 
 # npm

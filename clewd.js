@@ -7,7 +7,11 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
+<<<<<<< HEAD
 let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp;
+=======
+let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp = Date.now();
+>>>>>>> 0999f7efad3745fe11ffb7d51ae4f2738e59ae1e
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
@@ -361,7 +365,7 @@ const updateParams = res => {
     updateParams(convRes);
     conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
 /***************************** */
-    invalidtime = 0;
+    invalidtime = 0, changing = false;
     } catch (err) {
         console.error('[33mClewd:[0m\n%o', err);
         Config.CookieArray?.length > 0 && CookieChanger.emit('ChangeCookie');
@@ -783,7 +787,11 @@ const updateParams = res => {
                 if (!apiKey) { //if (prevImpersonated) { try {
                     await deleteChat(Conversation.uuid); //} catch (err) {}
 /******************************** */
+<<<<<<< HEAD
                     changeflag++;
+=======
+                    changeflag += 1;
+>>>>>>> 0999f7efad3745fe11ffb7d51ae4f2738e59ae1e
                     if (changeflag < 0 || Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
                         changeflag = 0;
                         CookieChanger.emit('ChangeCookie');
@@ -797,8 +805,12 @@ const updateParams = res => {
       case '/v1/complete':
         res.json({
             error: {
+<<<<<<< HEAD
                 message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell',
                 code: 404
+=======
+                message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell'
+>>>>>>> 0999f7efad3745fe11ffb7d51ae4f2738e59ae1e
             }
         }, 404);
         break;
