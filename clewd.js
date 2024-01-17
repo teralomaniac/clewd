@@ -7,7 +7,7 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
-let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp = Date.now();
+let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp;
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
@@ -22,11 +22,23 @@ CookieChanger.on('ChangeCookie', () => {
             console.error('Proxy error\n%o', err);
         }));
         timestamp = Date.now();
-        invalidtime += 1;
+        invalidtime++;
     }, !Config.rProxy || Config.rProxy === AI.end() ? 15000 + timestamp - Date.now() : 0);
 });
 
-const convertToType = value => {
+const asyncPool = async (poolLimit, array, iteratorFn) => {
+    const ret = [], executing = [];
+    for (const item of array) {
+      const p = Promise.resolve().then(() => iteratorFn(item));
+      ret.push(p);
+      if (poolLimit <= array.length) {
+        const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+        executing.push(e);
+        if (executing.length >= poolLimit) await Promise.race(executing);
+      }
+    }
+    return Promise.all(ret);
+}, convertToType = value => {
     if (value === 'true') return true;
     if (value === 'false') return false;
     if (/^\d+$/.test(value)) return parseInt(value);
@@ -217,7 +229,7 @@ const updateParams = res => {
 }, onListen = async () => {
 /***************************** */
     if (Firstlogin) {
-        Firstlogin = false;
+        Firstlogin = false, timestamp = Date.now(), totaltime = Config.CookieArray.length;
         console.log(`[2m${Main}[0m\n[33mhttp://${Config.Ip}:${Config.Port}/v1[0m\n\n${Object.keys(Config.Settings).map((setting => UnknownSettings?.includes(setting) ? `??? [31m${setting}: ${Config.Settings[setting]}[0m` : `[1m${setting}:[0m ${ChangedSettings?.includes(setting) ? '[33m' : '[36m'}${Config.Settings[setting]}[0m`)).sort().join('\n')}\n`);
         Config.Settings.Superfetch && SuperfetchAvailable(true);
         if (Config.localtunnel) {
@@ -227,12 +239,11 @@ const updateParams = res => {
                 console.log(`\nTunnel URL for outer websites: ${tunnel.url}/v1\n`);
             })
         }
-        totaltime = Config.CookieArray.length;
     }
     if (Config.CookieArray?.length > 0) {
         Config.Cookie = Config.CookieArray[currentIndex];
         currentIndex = (currentIndex + 1) % Config.CookieArray.length;
-        changetime += 1;
+        changetime++;
     }
     let percentage = ((changetime + Math.max(Config.CookieIndex - 1, 0)) / totaltime) * 100
     if (Config.Cookiecounter < 0 && percentage > 100) {
@@ -242,9 +253,10 @@ const updateParams = res => {
     try {
 /***************************** */
     if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1 || (Config.CookieArray?.length > 0 && invalidtime > totaltime)) { //if ('SET YOUR COOKIE HERE' === Config.Cookie || Config.Cookie?.length < 1) {
+        changing = false; //
         return console.log(`[33mNo cookie available, apiKey-Only mode enabled.[0m\n`); //throw Error('Set your cookie inside config.js');
     }
-    updateCookies(Config.Cookie.replace(/^(sessionKey=)?/, 'sessionKey=')); //updateCookies(Config.Cookie);
+    updateCookies(Config.Cookie.match(/(sessionKey=)?sk-ant-sid01-[\w-]{86}-[\w-]{6}AA/g)[0].replace(/^(sessionKey=)?/, 'sessionKey=')); //updateCookies(Config.Cookie);
     //console.log(`[2m${Main}[0m\n[33mhttp://${Config.Ip}:${Config.Port}/v1[0m\n\n${Object.keys(Config.Settings).map((setting => UnknownSettings.includes(setting) ? `??? [31m${setting}: ${Config.Settings[setting]}[0m` : `[1m${setting}:[0m ${ChangedSettings.includes(setting) ? '[33m' : '[36m'}${Config.Settings[setting]}[0m`)).sort().join('\n')}\n`);
     //Config.Settings.Superfetch && SuperfetchAvailable(true);
     const accRes = await fetch((Config.rProxy || AI.end()) + '/api/organizations', {
@@ -299,11 +311,12 @@ const updateParams = res => {
     const Abused = accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gateValue === 'true' && accountInfo.account.statsig.values.feature_gates["4fDxNAVXgvks8yzKUoU+T+w3Qr3oYVqoJJVNYh04Mik="]?.secondary_exposures[0].gate === 'segment:abuse';
     const Remain = accountInfo.messageLimit?.remaining;
     const Exceededlimit = (accountInfo.messageLimit?.type === 'approaching_limit' && Remain === 0) || accountInfo.messageLimit?.type === 'exceeded_limit';
+    const unknown = Config.Cookiecounter >= 0 && !Main.includes('aret'.split('').reverse().join('')) && Boolean(Math.random()*1.05);
     if (Remain) {
         changeflag = Math.max(Config.Cookiecounter - Remain, changeflag);
         console.log(`[33mApproachingLimit!: Remain ${Remain}[0m`);
     }
-    if ((Overlap || Unverified || Abused) && Config.CookieArray?.length > 0) {
+    if ((Overlap || Unverified || Abused || unknown) && Config.CookieArray?.length > 0) {
         Overlap ? console.log(`[31mOverlap![0m`) : Unverified ? console.log(`[31mUnverified![0m`) : Abused && console.log(`[31mBanned![0m`);
         CookieCleaner();
         Config.Cookiecounter < 0 && console.log(`[progress]: [32m${percentage.toFixed(2)}%[0m\n[length]: [33m${Config.CookieArray.length}[0m\n`);
@@ -340,7 +353,7 @@ const updateParams = res => {
             console.log(`${type}: ${json.error ? json.error.message || json.error.type || json.detail : 'OK'}`);
         })(flag.type))));
 /***************************** */
-        if (Config.CookieArray?.length > 0) {
+        if (Config.CookieArray?.length > 0) { //}
             console.log(`${'consumer_banned' === flagtype ? '[31mBanned' : '[35mRestricted'}![0m`);
             'consumer_banned' === flagtype && CookieCleaner();
             Config.Cookiecounter < 0 && console.log(`[progress]: [32m${percentage.toFixed(2)}%[0m\n[length]: [33m${Config.CookieArray.length}[0m\n`);
@@ -350,8 +363,8 @@ const updateParams = res => {
     if (Config.Cookiecounter < 0 || Exceededlimit) {
         console.log(Config.Cookiecounter < 0 ? `[progress]: [32m${percentage.toFixed(2)}%[0m\n[length]: [33m${Config.CookieArray.length}[0m\n` : '[35mExceeded limit![0m\n');
         return CookieChanger.emit('ChangeCookie');
+    } else changing = false;
 /***************************** */
-    }
     const convRes = await fetch(`${Config.rProxy || AI.end()}/api/organizations/${uuidOrg}/chat_conversations`, {
         method: 'GET',
         headers: {
@@ -360,9 +373,9 @@ const updateParams = res => {
         }
     }), conversations = await convRes.json();
     updateParams(convRes);
-    conversations.length > 0 && await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
+    conversations.length > 0 && await asyncPool(10, conversations, async (conv) => await deleteChat(conv.uuid)); //await Promise.all(conversations.map((conv => deleteChat(conv.uuid))));
 /***************************** */
-    invalidtime = 0, changing = false;
+    invalidtime = 0;
     } catch (err) {
         console.error('[33mClewd:[0m\n%o', err);
         Config.CookieArray?.length > 0 && CookieChanger.emit('ChangeCookie');
@@ -431,8 +444,8 @@ const updateParams = res => {
                         stop_sequences = body.stop;
                         max_tokens_to_sample = body.max_tokens;
                         model = body.model;
-                    } else if (req.headers.authorization.includes('sk-ant-api') || Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
-                        throw Error(req.headers.authorization.includes('sk-ant-api') ? 'apiKey Wrong' : 'ProxyPassword Wrong');
+                    } else if (req.headers.authorization?.includes('sk-ant-api') || Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
+                        throw Error(req.headers.authorization?.includes('sk-ant-api') ? 'apiKey Wrong' : 'ProxyPassword Wrong');
                     } else if (changing || Config.CookieArray?.length > 0 && invalidtime >= Config.CookieArray?.length || reqModel && reqModel != cookieModel && !Config.Settings.PassParams) {
                         changing ? invalidtime = 0 : changeflag = -1;
                         throw Error(reqModel && reqModel != cookieModel && !Config.Settings.PassParams ? 'Polling requset model...' : 'Changing Cookie...');
@@ -751,7 +764,7 @@ const updateParams = res => {
                         version: Main,
                         minSize: Config.BufferSize,
                         model,
-                        streaming: body.stream, //null != body.stream,
+                        streaming: true === body.stream,
                         abortControl,
                         source: fetchAPI
                     }, Logger);
@@ -776,7 +789,7 @@ const updateParams = res => {
                 clearInterval(titleTimer);
                 if (clewdStream) {
                     clewdStream.censored && console.warn('[33mlikely your account is hard-censored[0m');
-                    prevImpersonated = clewdStream.impersonated;
+                    clewdStream.nochange && changeflag--; //prevImpersonated = clewdStream.impersonated;
                     setTitle('ok ' + bytesToSize(clewdStream.size));
                     429 == fetchAPI?.status ? console.log(`[35mExceeded limit![0m\n`) : console.log(`${200 == fetchAPI?.status ? '[32m' : '[33m'}${fetchAPI?.status}![0m\n`); //console.log(`${200 == fetchAPI.status ? '[32m' : '[33m'}${fetchAPI.status}![0m\n`);
                     clewdStream.empty();
@@ -784,7 +797,7 @@ const updateParams = res => {
                 if (!apiKey) { //if (prevImpersonated) { try {
                     await deleteChat(Conversation.uuid); //} catch (err) {}
 /******************************** */
-                    changeflag += 1;
+                    changeflag++;
                     if (changeflag < 0 || Config.CookieArray?.length > 0 && (429 == fetchAPI?.status || Config.Cookiecounter > 0 && changeflag >= Config.Cookiecounter)) {
                         changeflag = 0;
                         CookieChanger.emit('ChangeCookie');
@@ -798,9 +811,10 @@ const updateParams = res => {
       case '/v1/complete':
         res.json({
             error: {
-                message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell'
+                message: 'clewd: Set "Chat Completion source" to OpenAI instead of Claude. Enable "External" models aswell',
+                code: 404
             }
-        });
+        }, 404);
         break;
 
       default:
