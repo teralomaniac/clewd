@@ -7,7 +7,7 @@
 const {createServer: Server, IncomingMessage, ServerResponse} = require('node:http'), {createHash: Hash, randomUUID, randomInt, randomBytes} = require('node:crypto'), {TransformStream, ReadableStream} = require('node:stream/web'), {Readable, Writable} = require('node:stream'), {Blob} = require('node:buffer'), {existsSync: exists, writeFileSync: write, createWriteStream} = require('node:fs'), {join: joinP} = require('node:path'), {ClewdSuperfetch: Superfetch, SuperfetchAvailable} = require('./lib/clewd-superfetch'), {AI, fileName, genericFixes, bytesToSize, setTitle, checkResErr, Replacements, Main} = require('./lib/clewd-utils'), ClewdStream = require('./lib/clewd-stream');
 
 /******************************************************* */
-let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp;
+let currentIndex, Firstlogin = true, changeflag = 0, changing, changetime = 0, totaltime, invalidtime = 0, uuidOrgArray = [], model, reqModel, cookieModel, tokens, apiKey, timestamp, regexLog;
 
 const events = require('events'), CookieChanger = new events.EventEmitter();
 require('events').EventEmitter.defaultMaxListeners = 0;
@@ -70,14 +70,19 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
     }
     return content.replace(/(\n\n|^\s*)xmlPlot:\s*/gm, '$1');
 }, xmlPlot_regex = (content, order) => {
-    let match, regex = new RegExp(`<regex(?: +order *= *${order})${order === 2 ? '?' : ''}> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>`, 'gm');
-    while ((match = regex.exec(content)) !== null) {
+    let matches = content.match(new RegExp(`<regex(?: +order *= *${order})${order === 2 ? '?' : ''}> *"(/?)(.*)\\1(.*?)" *: *"(.*?)" *</regex>`, 'gm'));
+    matches && matches.forEach(match => {
         try {
-            content = content.replace(new RegExp(match[2], match[3]), match[4].replace(/(\r\n|\r|\\n)/gm, '\n'));
-        } catch (err) {}
-    }
+            const reg = /<regex(?: +order *= *\d)?> *"(\/?)(.*)\1(.*?)" *: *"(.*?)" *<\/regex>/.exec(match);
+            regexLog += match + '\n';
+            content = content.replace(new RegExp(reg[2], reg[3]), reg[4].replace(/(\r\n|\r|\\n)/gm, '\n'));
+        } catch (err) {
+            console.log(`[33mRegex error: [0m` + match + '\n' + err);
+        }
+    });
     return content;
 }, xmlPlot = (content, nonsys = false) => {
+    regexLog = '';
     //一次正则
     content = xmlPlot_regex(content, 1);
     //一次role合并
@@ -108,7 +113,7 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
     //三次正则
     content = xmlPlot_regex(content, 3);
     //消除空XML tags、两端空白符和多余的\n
-    content = content.replace(/<regex>.*?<\/regex>/gm, '')
+    content = content.replace(/<regex( +order *= *\d)?>.*?<\/regex>/gm, '')
         .replace(/(\r\n|\r|\\n)/gm, '\n')
         .replace(/\s*<\|curtail\|>\s*/g, '\n')
         .replace(/\n<\/(card|hidden|META)>\s+?<\1>\n/g, '\n')
@@ -123,7 +128,7 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
         content.includes('<|reverseHA|>') && (content = content.replace(/\s*<\|reverseHA\|>\s*/g, '\n\n').replace(/Assistant|Human/g, function(match) {return match === 'Human' ? 'Assistant' : 'Human'}).replace(/\n(A|H): /g, function(match, p1) {return p1 === 'A' ? '\nH: ' : '\nA: '}));
         return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^.+:/, '\n\n$&').replace(/\n\n.+:$/, '$& ');
     } else {
-        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^Human:|\n\nAssistant:$/g, '');
+        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^Human: *|\n\nAssistant: *$/g, '');
     }
 };
 /******************************************************* */
@@ -437,10 +442,10 @@ const updateParams = res => {
                     temperature = Math.max(.1, Math.min(1, temperature));
                     let {messages} = body;
 /************************* */
-                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey: *)[\S]*/);
+                    apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey:).*/)?.map(item => item.trim());
                     reqModel = /^claude-2.[01]$/.test(body.model) ? body.model : '';
                     let max_tokens_to_sample, stop_sequences;
-                    if (apiKey || Config.Settings.PassParams) {
+                    if (apiKey) {
                         stop_sequences = body.stop;
                         max_tokens_to_sample = body.max_tokens;
                         model = body.model;
@@ -683,14 +688,15 @@ const updateParams = res => {
                         : prompt.replace(/(?<=\n\n(H(?:uman)?|A(?:ssistant)?)):[ ]?/g, '： '));
                     Config.Settings.padtxt && (prompt = padtxt(prompt));
 /******************************** */
-                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) ${tokens}t PROMPT:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
+                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) regex:\n${regexLog}\n####### PROMPT ${tokens}t:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
-                            const res = await fetch(`${Config.api_rProxy ? Config.api_rProxy : 'https://api.anthropic.com'}/v1/complete`, {
+                            const res = await fetch(`${Config.api_rProxy ? Config.api_rProxy.replace('/v1','') : 'https://api.anthropic.com'}/v1/complete`, {
                                 method: 'POST',
                                 signal,
                                 headers: {
+                                    'authorization': 'Bearer ' + apiKey[Math.floor(Math.random() * apiKey.length)],
                                     'Content-Type': 'application/json',
                                     'x-api-key': apiKey[Math.floor(Math.random() * apiKey.length)],
                                     'anthropic-version': '2023-06-01'
@@ -729,7 +735,7 @@ const updateParams = res => {
                                 },
                                 prompt: prompt || '',
                                 timezone: AI.zone(),
-                                model
+                                model: (Config.Settings.PassParams && body.model?.includes('claude-')) ? body.model : model //model
                             },
                             conversation_uuid: Conversation.uuid,
                             organization_uuid: uuidOrg,
