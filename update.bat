@@ -27,7 +27,7 @@ echo Install git to update
 GOTO:end
 
 :notgit
-echo Only able to update if you clone the repository (git clone https://gitgud.io/ahsk/clewd.git)
+echo Only able to update if you clone the repository (git clone https://github.com/teralomaniac/clewd.git)
 GOTO:end
 
 

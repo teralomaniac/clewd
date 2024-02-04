@@ -1,7 +1,7 @@
 {
   "name": "clewd",
   "version": "4.8",
-  "description": ":^)",
+  "description": "<div align=\"center\"> <a href=\"https://github.com/teralomaniac/clewd\"> <h1>Clewd</h1>   <img     height=\"120\"     width=\"120\"     alt=\"Clewd\"     title=\"Clewd\"     src=\"https://gitgud.io/ahsk/clewd/-/raw/master/media/logo.png\"     align=\"left\"   />",
   "main": "clewd.js",
   "engines": {
     "node": ">=20.4.0"
@@ -27,13 +27,16 @@
       "url": "https://github.com/h-a-s-k"
     }
   ],
-  "homepage": "https://gitgud.io/ahsk/clewd",
+  "homepage": "https://rentry.org/teralomaniac_clewd",
   "repository": {
     "type": "git",
-    "url": "git+https://gitgud.io/ahsk/clewd.git"
+    "url": "git+https://github.com/teralomaniac/clewd.git"
   },
   "bugs": {
     "url": "https://gitgud.io/ahsk/clewd/-/issues"
   },
-  "dependencies": {}
+  "dependencies": {
+    "localtunnel": "^2.0.2",
+    "@anthropic-ai/tokenizer": "^0.0.4"
+  }
 }

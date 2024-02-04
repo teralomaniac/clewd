@@ -15,6 +15,6 @@ then
 		git config --local url."https://".insteadOf ssh://
 		git pull --rebase --autostash
 	else
-		echo "Only able to update if you clone the repository (git clone https://gitgud.io/ahsk/clewd.git)"
+		echo "Only able to update if you clone the repository (git clone https://github.com/teralomaniac/clewd.git)"
 	fi
 fi
