@@ -39,10 +39,6 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
     if (value === 'false') return false;
     if (/^\d+$/.test(value)) return parseInt(value);
     return value;
-}, convertWidth = (str, reverse = false) => {
-    return str.replace(reverse ? /[Ａ-Ｚａ-ｚ]/g : /[A-Za-z]/g, function(match) {
-        return String.fromCharCode(match.charCodeAt(0) + (reverse ? -65248 : 65248));
-    });
 }, CookieCleaner = percentage => {
     Config.CookieArray.splice(Config.CookieArray.indexOf(Config.Cookie), 1);
     Config.Cookie = '';
@@ -413,7 +409,9 @@ const updateParams = res => {
                     id: 'claude-2.1-cocoa'      },{
                     id: 'claude-2.1-coral'      },{
                     id: 'claude-2.1-daisy'      },{
-                    id: 'claude-2.1-echo'       },{    
+                    id: 'claude-2.1-echo'       },{
+                    id: 'claude-2.1-fable'      },{
+                    id: 'claude-2.1-gem'        },{
                     id: 'claude-2.1-pasta'      },{
                     id: 'claude-2.1-surf'       },{
                     id: 'claude-2'              },{
@@ -680,12 +678,13 @@ const updateParams = res => {
                     'R' !== type || prompt || (prompt = '...regen...');
 /******************************** */
                     prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, !/claude-2\.[1-9]/.test(model)) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt).trim();
-                    Config.Settings.FullColon && stop_sequences.push(convertWidth('\n\nHuman:'), convertWidth('\n\nAssistant:')) && (prompt = apiKey
-                            ? prompt.replace(/(?<!\n\nHuman:.*)\n\nAssistant:|\n\nHuman:(?!.*\n\nAssistant:)/gs, function(match) {return convertWidth(match)})
-                            : prompt.replace(/\n\n(Human|Assistant):/g, function(match) {return convertWidth(match)}));
+                    if (Config.Settings.FullColon) if (/claude-2.(1-|[2-9])/.test(model)) {
+                            stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
+                            prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
+                        } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
                     prompt = padtxt(prompt);
 /******************************** */
-                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) regex:\n${regexLog}\n####### PROMPT ${tokens}t:\n${convertWidth(prompt, true)}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
+                    Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) regex:\n${regexLog}\n####### PROMPT ${tokens}t:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
