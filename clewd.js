@@ -679,9 +679,9 @@ const updateParams = res => {
                     apiKey && messagesAPI && (type = 'msg_api');
                     prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, !/claude-2\.[1-9]/.test(model)) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant:` : genericFixes(prompt).trim();
                     if (Config.Settings.FullColon) if (/claude-2.(1-|[2-9])/.test(model)) {
-                            stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
-                            prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
-                        } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
+                        stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
+                        prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
+                    } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
                     prompt = padtxt(prompt);
 /******************************** */
                     console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
