@@ -679,9 +679,9 @@ const updateParams = res => {
                     apiKey && messagesAPI && (type = 'msg_api');
                     prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, !/claude-2\.[1-9]/.test(model)) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant:` : genericFixes(prompt).trim();
                     if (Config.Settings.FullColon) if (/claude-2.(1-|[2-9])/.test(model)) {
-                            stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
-                            prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
-                        } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
+                        stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
+                        prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
+                    } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
                     prompt = padtxt(prompt);
 /******************************** */
                     console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
@@ -690,10 +690,16 @@ const updateParams = res => {
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
-                            let system, messages;
+                            let messages, system;
                             if (messagesAPI) {
-                                const splitHuman = prompt.split('\n\nHuman:'), splitAssistant = splitHuman.slice().reverse()[0].split('\n\nAssistant:'), userMessage = [...splitHuman.slice(1, -1), splitAssistant.slice(0, -1).join('\n\nAssistant:')].join('\n\nHuman:'), assistantMessage = splitAssistant.slice().reverse()[0];
-                                messages = [{role: 'user', content: Config.Settings.FullColon ? userMessage.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:').trim() : userMessage.trim()}, assistantMessage && {role: 'assistant', content: assistantMessage.trim()}].filter(Boolean), system = splitHuman[0].trim();
+                                const rounds = prompt.replace(/\n\nAssistant: *$/, '').split('\n\nHuman:');
+                                messages = (Config.Settings.FullColon ? rounds.slice(1).reduce((acc, current) => {
+                                    acc.push(current);
+                                    return acc.length > 1 && !acc[acc.length - 2].includes('\n\nAssistant:') ? acc.slice(0, -2).concat(acc.slice(-2).join('\n\r\nHuman:')) : acc;
+                                }, []) : rounds.slice(1)).flatMap(round => {
+                                    const turns = Config.Settings.FullColon ? round.replace(/(?<=\n\nAssistant:.*?)\n(\nAssistant:)/g, '\n\r$1').split('\n\nAssistant:') : round.split('\n\nAssistant:');
+                                    return [{role: 'user', content: turns[0].trim()}].concat(turns.slice(1).flatMap(turn => [{role: 'assistant', content: turn.trim()}]))
+                                }), system = rounds[0].trim();
                             }
                             const res = await fetch(`${(Config.api_rProxy || 'https://api.anthropic.com').replace(/\/v1 *$/,'')}/v1/${messagesAPI ? 'messages' : 'complete'}`, {
                                 method: 'POST',
