@@ -48,9 +48,13 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
     return CookieChanger.emit('ChangeCookie');
 }, padtxt = content => {
     const {countTokens} = require('@anthropic-ai/tokenizer');
-    const placeholder = Config.padtxt_placeholder || randomBytes(randomInt(5, 15)).toString('hex');
     tokens = countTokens(content);
-    const padding = placeholder.repeat(Math.floor((/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.test(content) ? parseInt(/(?<=<\|padtxt.*?)\d+(?=.*?\|>)/.exec(content)[0]) : Math.min(Config.Settings.padtxt, Math.max(1000, Config.Settings.padtxt - tokens))) / countTokens(placeholder.trim())));
+    const padtxt = String(Config.Settings.padtxt).split(',').reverse(), maxtokens = parseInt(padtxt[0]), extralimit = parseInt(padtxt[1]) || 1000, minlimit = parseInt(padtxt[2]);
+    const placeholder = (tokens > maxtokens - extralimit && minlimit ? Config.placeholder_byte : Config.placeholder_token) || randomBytes(randomInt(5, 15)).toString('hex');
+    const placeholdertokens = countTokens(placeholder.trim());
+    for (let match; match = content.match(/<\|padtxt.*?(\d+)t.*?\|>/); content = content.replace(match[0], placeholder.repeat(parseInt(match[1]) / placeholdertokens))) tokens += parseInt(match[1]);
+    if(/<\|padtxt off.*?\|>/.test(content)) return content.replace(/\s*<\|padtxt.*?\|>\s*/g, '\n\n');
+    const padding = placeholder.repeat(Math.min(maxtokens, (tokens <= maxtokens - extralimit ? maxtokens - tokens : minlimit ? minlimit : extralimit)) / placeholdertokens);
     content = /<\|padtxt.*?\|>/.test(content) ? content.replace(/<\|padtxt.*?\|>/, padding).replace(/\s*<\|padtxt.*?\|>\s*/g, '\n\n') : !apiKey ? padding + '\n\n\n' + content.trim() : content;
     return content;
 }, xmlPlot_merge = (content, nonsys) => {
@@ -113,17 +117,19 @@ const asyncPool = async (poolLimit, array, iteratorFn) => {
     //消除空XML tags、两端空白符和多余的\n
     content = content.replace(/<regex( +order *= *\d)?>.*?<\/regex>/gm, '')
         .replace(/(\r\n|\r|\\n)/gm, '\n')
+        .replace(/\\\n/gm, '\\n')
         .replace(/\s*<\|curtail\|>\s*/g, '\n')
         .replace(/\n<\/(card|hidden|META)>\s+?<\1>\n/g, '\n')
         .replace(/\n<(\/?card|example|hidden|plot|META)>\s+?<\1>/g, '\n<$1>')
         .replace(/(?:<!--.*?-->\n|.+?: ?\n)?<(card|example|hidden|plot|META)>\s+?<\/\1>\n*/g, '')
         .replace(/(?<=(: |\n)<(card|hidden|example|plot|META|EOT)>\n)\s*/g, '')
-        .replace(/\s*(?=\n<\/(card|hidden|example|plot|META|EOT)>(\n|$))/g, '');
+        .replace(/\s*(?=\n<\/(card|hidden|example|plot|META|EOT)>(\n|$))/g, '')
+        .replace(/\s*\n\n(H(uman)?|A(ssistant)?): +/g, '\n\n$1: ');
     //确保格式正确
     if (apiKey) {
-        content = content.replace(/\n\n(Assistant|Human):(?!.*?\n\n(Assistant|Human):).*$/s, function(match, p1) {return p1 === 'Assistant' ? match : match + '\n\nAssistant: '}).replace(/\s*<\|noAssistant\|>\s*(.*?)(?:\n\nAssistant:\s*)?$/s, '\n\n$1');
+        content = content.replace(/\n\n(Assistant|Human):(?!.*?\n\n(Assistant|Human):).*$/s, function(match, p1) {return p1 === 'Assistant' ? match : match + '\n\nAssistant:'}).replace(/\s*<\|noAssistant\|>\s*(.*?)(?:\n\nAssistant:\s*)?$/s, '\n\n$1');
         content.includes('<|reverseHA|>') && (content = content.replace(/\s*<\|reverseHA\|>\s*/g, '\n\n').replace(/Assistant|Human/g, function(match) {return match === 'Human' ? 'Assistant' : 'Human'}).replace(/\n(A|H): /g, function(match, p1) {return p1 === 'A' ? '\nH: ' : '\nA: '}));
-        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^.+:/, '\n\n$&').replace(/\n\n.+:$/, '$& ').replace(/(?<=\n)\n(?=\n)/g, '');
+        return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^.+:/, '\n\n$&').replace(/(?<=\n)\n(?=\n)/g, '');
     } else {
         return content.replace(Config.Settings.padtxt ? /\s*<\|(?!padtxt).*?\|>\s*/g : /\s*<\|.*?\|>\s*/g, '\n\n').trim().replace(/^Human: *|\n\nAssistant: *$/g, '').replace(/(?<=\n)\n(?=\n)/g, '');
     }
@@ -160,7 +166,8 @@ let uuidOrg, curPrompt = {}, prevPrompt = {}, prevMessages = [], prevImpersonate
     SystemInterval: 3,
     rProxy: '',
     api_rProxy: '',
-    padtxt_placeholder: '',
+    placeholder_token: '',
+    placeholder_byte: '',
     PromptExperimentFirst: '',
     PromptExperimentNext: '',
     PersonalityFormat: '{{char}}\'s personality: {{personality}}',
@@ -175,12 +182,12 @@ let uuidOrg, curPrompt = {}, prevPrompt = {}, prevMessages = [], prevImpersonate
         NoSamples: false,
         StripAssistant: false,
         StripHuman: false,
-        PassParams: false,
+        PassParams: true,
         ClearFlags: true,
         PreserveChats: false,
         LogMessages: true,
         FullColon: true,
-        padtxt: 15000,
+        padtxt: "1000,1000,15000",
         xmlPlot: true,
         Superfetch: true
     }
@@ -397,14 +404,19 @@ const updateParams = res => {
         res.json({
 /***************************** */
             data: [ //data: AI.mdl().map((name => ({
-                ...AI.mdl().slice(1).map((name => ({ id: name }))), {
+                ...AI.mdl().map((name => ({ id: name }))), {
+                    id: 'claude-default'            },{
+                    id: 'claude-1.3'                },{
                     id: 'claude-2.1-acorn'          },{
-                    id: 'claude-2.1-pasta'          },{
                     id: 'claude-2.1-basil'          },{
                     id: 'claude-2.1-cocoa'          },{
+                    id: 'claude-2.1-coral'          },{
+                    id: 'claude-2.1-daisy'          },{
+                    id: 'claude-2.1-echo'           },{
+                    id: 'claude-2.1-fable'          },{
+                    id: 'claude-2.1-gem'            },{
+                    id: 'claude-2.1-pasta'          },{
                     id: 'claude-2.1-surf'           },{
-                    id: 'claude-2'                  },{
-                    id: 'claude-1.3'                },{
                     id: 'claude-instant-1.1'        //id: name
             }] //})))
 /***************************** */
@@ -432,12 +444,12 @@ const updateParams = res => {
                     let {messages} = body;
 /************************* */
                     apiKey = req.headers.authorization?.match(/sk-ant-api\d\d-[\w-]{86}-[\w-]{6}AA/g) || req.headers.authorization?.match(/(?<=3rdKey:).*/)?.map(item => item.trim())[0].split(/ ?, ?/);
-                    model = apiKey || Config.Settings.PassParams && body.model.includes('claude-') || isPro && AI.mdl().includes(body.model) ? body.model : cookieModel;
-                    submodel = /^claude-2\.\d/.test(body.model) ? body.model : '';
-                    const max_tokens_to_sample = body.max_tokens, stop_sequences = body.stop;
+                    model = apiKey || Config.Settings.PassParams && /claude-(?!default)/.test(body.model) || isPro && AI.mdl().includes(body.model) ? body.model : cookieModel;
+                    submodel = /claude-\d.+/.test(body.model) ? body.model : '';
+                    let max_tokens_to_sample = body.max_tokens, stop_sequences = body.stop || [], top_p = body.top_p, top_k = body.top_k;
                     if (!apiKey && Config.ProxyPassword != '' && req.headers.authorization != 'Bearer ' + Config.ProxyPassword) {
                         throw Error('ProxyPassword Wrong');
-                    } else if (!changing && !Config.Settings.PassParams && !apiKey && (!isPro && submodel && submodel != cookieModel || invalidtime >= Config.CookieArray?.length)) {
+                    } else if (!changing && !apiKey && (!Config.Settings.PassParams && !isPro && submodel && submodel != cookieModel || invalidtime >= Config.CookieArray?.length)) {
                         changing = true;
                         CookieChanger.emit('ChangeCookie');
                     }
@@ -663,35 +675,59 @@ const updateParams = res => {
                             systems
                         };
                     })(messages, type);
-                    console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`); //console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
-                    'R' !== type || prompt || (prompt = '...regen...');
 /******************************** */
-                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, !/claude-2\.[1-9]/.test(model)) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant: ` : genericFixes(prompt).trim();
-                    Config.Settings.FullColon && (prompt = apiKey
-                        ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1︓').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1︓')
-                        : prompt.replace(/(?<=\n\n(H(?:uman)?|A(?:ssistant)?)):[ ]?/g, '︓ '));
+                    const messagesAPI = /<\|messagesAPI\|>/.test(prompt), messagesLog = /<\|messagesLog\|>/.test(prompt);
+                    apiKey && messagesAPI && (type = 'msg_api');
+                    prompt = Config.Settings.xmlPlot ? xmlPlot(prompt, !/claude-(2\.[1-9]|[3-9])/.test(model)) : apiKey ? `\n\nHuman: ${genericFixes(prompt)}\n\nAssistant:` : genericFixes(prompt).trim();
+                    if (Config.Settings.FullColon) if (/claude-(2\.(1-|[2-9])|[3-9])/.test(model)) {
+                        stop_sequences.push('\n\r\nHuman:', '\n\r\nAssistant:');
+                        prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)\n\n(Assistant:)/gs, '\n\r\n$1').replace(/\n\n(Human:)(?!.*\n\nAssistant:)/gs, '\n\r\n$1') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\r\n$1:');
+                    } else prompt = apiKey ? prompt.replace(/(?<!\n\nHuman:.*)(\n\nAssistant):/gs, '$1：').replace(/(\n\nHuman):(?!.*\n\nAssistant:)/gs, '$1：') : prompt.replace(/\n\n(Human|Assistant):/g, '\n\n$1：');
                     prompt = padtxt(prompt);
 /******************************** */
+                    console.log(`${model} [[2m${type}[0m]${!retryRegen && systems.length > 0 ? ' ' + systems.join(' [33m/[0m ') : ''}`);
+                    'R' !== type || prompt || (prompt = '...regen...');
                     Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### ${model} (${type}) regex:\n${regexLog}\n####### PROMPT ${tokens}t:\n${prompt}\n--\n####### REPLY:\n`); //Logger?.write(`\n\n-------\n[${(new Date).toLocaleString()}]\n####### MODEL: ${model}\n####### PROMPT (${type}):\n${prompt}\n--\n####### REPLY:\n`);
                     retryRegen || (fetchAPI = await (async (signal, model, prompt, temperature, type) => {
 /******************************** */
                         if (apiKey) {
-                            const res = await fetch(`${(Config.api_rProxy || 'https://api.anthropic.com').replace(/\/v1 *$/,'')}/v1/complete`, {
+                            let messages, system;
+                            if (messagesAPI) {
+                                const rounds = prompt.replace(/\n\nAssistant: *$/, '').split('\n\nHuman:');
+                                messages = rounds.slice(1).flatMap(round => {
+                                    const turns = round.split('\n\nAssistant:');
+                                    return [{role: 'user', content: turns[0].trim().replace(/^$/,' ')}].concat(turns.slice(1).flatMap(turn => [{role: 'assistant', content: turn.trim().replace(/^$/,' ')}]))
+                                }).reduce((acc, current) => {
+                                    if (Config.Settings.FullColon && acc[acc.length - 1]?.role === current.role) {
+                                        acc[acc.length - 1].content += (current.role === 'user' ? '\n\r\nHuman:' : '\n\r\nAssistant:') + current.content;
+                                    } else acc.push(current);
+                                    return acc;
+                                }, []), system = rounds[0].trim();
+                                messagesLog && console.log([{role: 'system', content: system}].concat(messages));
+                            }
+                            const res = await fetch(`${(Config.api_rProxy || 'https://api.anthropic.com').replace(/\/v1 *$/,'')}/v1/${messagesAPI ? 'messages' : 'complete'}`, {
                                 method: 'POST',
                                 signal,
                                 headers: {
-                                    'authorization': 'Bearer ' + apiKey[Math.floor(Math.random() * apiKey.length)],
                                     'Content-Type': 'application/json',
                                     'x-api-key': apiKey[Math.floor(Math.random() * apiKey.length)],
                                     'anthropic-version': '2023-06-01'
                                 },
                                 body: JSON.stringify({
-                                    ...stop_sequences && {stop_sequences},
+                                    ...messagesAPI ? {
+                                        max_tokens : max_tokens_to_sample,
+                                        messages,
+                                        ...system && {system}
+                                    } : {
+                                        max_tokens_to_sample,
+                                        prompt
+                                    },
                                     model,
-                                    max_tokens_to_sample,
+                                    stop_sequences,
                                     stream: true,
-                                    prompt,
-                                    temperature
+                                    temperature,
+                                    top_k,
+                                    top_p
                                 }),
                             });
                             await checkResErr(res);
@@ -717,6 +753,10 @@ const updateParams = res => {
                             files: [],
                             model,
                             ...Config.Settings.PassParams && {
+                                max_tokens_to_sample, //
+                                stop_sequences, //
+                                top_k, //
+                                top_p, //
                                 temperature
                             },
                             prompt: prompt || '',
