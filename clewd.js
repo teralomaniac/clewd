@@ -290,7 +290,9 @@ const updateParams = res => {
         console.log(`[35mNull![0m`);
         return CookieCleaner('Null', percentage);
     }
-    const bootAccInfo = bootstrap.account.memberships.find(item => item.organization.capabilities.includes('chat')).organization;
+    const bootAccInfo = bootstrap.account.memberships
+        .filter(item => item.organization.capabilities.includes('chat'))
+        .sort((a, b) => b.organization.capabilities.length - a.organization.capabilities.length)[0].organization;
     cookieModel = bootstrap.statsig.values.layer_configs["HPOHwBLNLQLxkj5Yn4bfSkgCQnBX28kPR7h/BNKdVLw="]?.value?.console_default_model_override?.model || bootstrap.statsig.values.dynamic_configs["6zA9wvTedwkzjLxWy9PVe7yydI00XDQ6L5Fejjq/2o8="]?.value?.model;
     isPro = bootAccInfo.capabilities.includes('claude_pro') && 'claude_pro' || bootAccInfo.capabilities.includes('raven') && 'claude_team_pro';
     const unknown = cookieModel && !(AI.mdl().includes(cookieModel) || Config.unknownModels.includes(cookieModel));
@@ -324,7 +326,9 @@ const updateParams = res => {
         }
     });
     await checkResErr(accRes);
-    const accInfo = (await accRes.json())?.find(item => item.capabilities.includes('chat')); //const accInfo = (await accRes.json())?.[0];\nif (!accInfo || accInfo.error) {\n    throw Error(`Couldn't get account info: "${accInfo?.error?.message || accRes.statusText}"`);\n}\nif (!accInfo?.uuid) {\n    throw Error('Invalid account id');\n}
+    const accInfo = (await accRes.json())
+        ?.filter(item => item.capabilities.includes('chat'))
+        .sort((a, b) => b.capabilities.length - a.capabilities.length)[0];
     setTitle('ok');
     updateParams(accRes);
     uuidOrg = accInfo?.uuid;
